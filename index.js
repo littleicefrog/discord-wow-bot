@@ -29,9 +29,15 @@ client.on('messageCreate', async (message) => {
     let browser;
     try {
       browser = await puppeteer.launch({
-        headless: "new", // Cloud Hosting/Render ပေါ်တွင် Run ရန်အတွက် True သို့မဟုတ် "new" ပြောင်းပေးထားပါသည်
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-      });
+  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+  headless: "new",
+  args: [
+    '--no-sandbox', 
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--single-process'
+  ]
+});
 
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800 });
@@ -99,3 +105,14 @@ process.on('unhandledRejection', (error) => {
 
 // Discord Bot Login (Render Env Variable မှ ဖတ်ယူပါမည်)
 client.login(process.env.DISCORD_TOKEN); // 👈 ဒီနေရာတွင် process.env သုံးထားပါသည်
+
+const http = require('http');
+
+// Render ရဲ့ Health Check / Port Scan အတွက် Dummy Web Server
+const PORT = process.env.PORT || 10000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Discord Bot is alive!');
+}).listen(PORT, () => {
+  console.log(`Dummy server is listening on port ${PORT}`);
+});
