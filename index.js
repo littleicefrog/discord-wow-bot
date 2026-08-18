@@ -144,14 +144,13 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     await page.goto(mainGroupUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     await dismissCookieBanner(page);
 
-    // --- STEP 2.5: Direct Scroll to Element & Click TRACKING -> Loot ---
-    console.log('👇 Locating "Loot" element and bringing into view...');
+    // --- STEP 2.5: Scroll & Click TRACKING -> Loot Menu ---
+    console.log('👇 Locating "Loot" menu item under TRACKING...');
     
     const lootClicked = await page.evaluate(() => {
-      // Find all clickable links/elements on the entire page
-      const allEls = Array.from(document.querySelectorAll('a, button, span, div, p'));
+      const allEls = Array.from(document.querySelectorAll('a, button, span, div'));
       
-      // Look specifically for the Loot menu item
+      // Find the Loot text element specifically under TRACKING
       const lootBtn = allEls.find(el => {
         const text = el.textContent ? el.textContent.trim().toLowerCase() : '';
         return text === 'loot' && el.children.length === 0;
@@ -159,9 +158,8 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
       if (lootBtn) {
         lootBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+        // Click the element and its parent container to ensure accordion expands
         lootBtn.click();
-        
-        // Also attempt parent click if wrapper handles onClick
         if (lootBtn.parentElement) lootBtn.parentElement.click();
         return true;
       }
@@ -169,40 +167,49 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     });
 
     if (!lootClicked) {
-      console.log('⚠️ Could not find Loot text, trying href selector...');
-      await page.evaluate(() => {
-        const lootLink = document.querySelector('a[href*="loot"]');
-        if (lootLink) {
-          lootLink.scrollIntoView({ behavior: 'instant', block: 'center' });
-          lootLink.click();
-        }
-      });
+      throw new Error("Could not find or click Loot menu in left navigation.");
     }
 
-    await new Promise(r => setTimeout(r, 3000));
+    console.log('⏳ Waiting for Loot sub-menu options (Team/Droptimizers) to expand...');
+    await new Promise(r => setTimeout(r, 2500));
     await dismissCookieBanner(page);
 
-    // Click "Team"
-    console.log('👆 Clicking "Team"...');
-    await page.evaluate(() => {
-      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
-      const teamBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'team');
-      if (teamBtn) {
-        teamBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-        teamBtn.click();
+    // --- STEP 2.6: Click Team / Droptimizers ---
+    console.log('👆 Looking for "Team" or "Droptimizer" sub-menu...');
+    
+    const subMenuClicked = await page.evaluate(() => {
+      const allEls = Array.from(document.querySelectorAll('a, button, span, div'));
+      
+      // Try to click Team first
+      let target = allEls.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'team');
+      
+      // If Team is not visible, look directly for Droptimizers
+      if (!target) {
+        target = allEls.find(el => el.textContent && el.textContent.trim().toLowerCase().includes('droptimizer'));
       }
+
+      if (target) {
+        target.scrollIntoView({ behavior: 'instant', block: 'center' });
+        target.click();
+        if (target.parentElement) target.parentElement.click();
+        return true;
+      }
+      return false;
     });
+
+    if (!subMenuClicked) {
+      console.log('⚠️ Could not click sub-menu directly, re-clicking Loot expansion...');
+    }
 
     await new Promise(r => setTimeout(r, 2000));
 
-    // Click "Droptimizer"
-    console.log('👆 Clicking "Droptimizer"...');
+    // Secondary Check for Droptimizer Tab
     await page.evaluate(() => {
-      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
-      const dropBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase().includes('droptimizer'));
-      if (dropBtn) {
-        dropBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-        dropBtn.click();
+      const allEls = Array.from(document.querySelectorAll('a, button, span, div'));
+      const dropTab = allEls.find(el => el.textContent && el.textContent.trim().toLowerCase().includes('droptimizer'));
+      if (dropTab) {
+        dropTab.scrollIntoView({ behavior: 'instant', block: 'center' });
+        dropTab.click();
       }
     });
 
