@@ -121,9 +121,9 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     const cleanCharName = characterName.toLowerCase().trim();
     console.log(`✅ Character Name: "${cleanCharName}"`);
-    await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating directly to Droptimizers...`);
+    await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating to WoWUtils...`);
 
-    // --- STEP 2: Inject Cookies & Navigate DIRECTLY to Droptimizer URL ---
+    // --- STEP 2: Inject Cookies & Navigate to Group Hub ---
     if (!process.env.SESSION_COOKIE) {
       throw new Error("SESSION_COOKIE environment variable is missing on Render!");
     }
@@ -138,15 +138,58 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       sameSite: 'Lax'
     });
 
-    // Sidebar ကို click မလုပ်တော့ဘဲ တိုက်ရိုက် Droptimizers URL သို့ သွားခြင်း
-    const droptimizerUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464/loot/droptimizers';
-    console.log(`📍 Navigating directly to: ${droptimizerUrl}`);
+    const mainGroupUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464';
+    console.log(`📍 Navigating to: ${mainGroupUrl}`);
     
-    await page.goto(droptimizerUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+    await page.goto(mainGroupUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     await dismissCookieBanner(page);
 
-    console.log('⏳ Waiting for Droptimizer table to load...');
+    // --- STEP 2.5: Scroll to "Loot" & Click to expand Accordion ---
+    console.log('👇 Locating "Loot" in sidebar...');
+    
+    const lootExpanded = await page.evaluate(() => {
+      const els = Array.from(document.querySelectorAll('a, button, span, div, p'));
+      const lootBtn = els.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'loot');
+
+      if (lootBtn) {
+        lootBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+        
+        // Dispatch real click events to trigger Next.js UI reaction
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        lootBtn.dispatchEvent(clickEvent);
+        if (lootBtn.parentElement) lootBtn.parentElement.dispatchEvent(clickEvent);
+        return true;
+      }
+      return false;
+    });
+
+    if (!lootExpanded) {
+      throw new Error('Could not locate "Loot" menu item in sidebar.');
+    }
+
+    console.log('⏳ Waiting for Loot accordion to expand...');
+    await new Promise(r => setTimeout(r, 2000));
+
+    // --- STEP 2.6: Click Droptimizers / Team sub-item ---
+    console.log('👆 Clicking Droptimizer / Team sub-item...');
+    await page.evaluate(() => {
+      const els = Array.from(document.querySelectorAll('a, button, span, div'));
+      // Find visible sub-options after Loot expands
+      const subItem = els.find(el => {
+        const txt = el.textContent ? el.textContent.trim().toLowerCase() : '';
+        return txt.includes('droptimizer') || txt === 'team' || txt === 'gear';
+      });
+
+      if (subItem) {
+        subItem.scrollIntoView({ behavior: 'instant', block: 'center' });
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        subItem.dispatchEvent(clickEvent);
+      }
+    });
+
+    console.log('⏳ Waiting for table view to render...');
     await new Promise(r => setTimeout(r, 4000));
+    await dismissCookieBanner(page);
 
     // --- STEP 3: Find Character Row & Click Upload Icon ---
     console.log(`🔍 Locating character row for "${cleanCharName}"...`);
