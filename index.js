@@ -71,7 +71,6 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     const characterName = await page.evaluate(() => {
       const titleText = document.title;
-      // Extract name from title e.g. "Droptimizer - Cobrapl - US-Illidan"
       const titleMatch = titleText.match(/-\s*([A-Za-z0-9]+)\s*-/);
       if (titleMatch && titleMatch[1]) {
         return titleMatch[1].trim();
@@ -115,81 +114,59 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
     await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
-    // Wait for initial render
     await new Promise(r => setTimeout(r, 4000));
 
-    // --- STEP 3: Flexible Click for "Team" Tab ---
+    // --- STEP 3: Click "Team" Tab ---
     console.log('👆 Attempting to click "Team" tab...');
-    const teamClicked = await page.evaluate(() => {
+    await page.evaluate(() => {
       const elements = Array.from(document.querySelectorAll('a, button, div, span'));
       const teamEl = elements.find(e => e.textContent && e.textContent.trim().toLowerCase() === 'team');
-      if (teamEl) {
-        teamEl.click();
-        return true;
-      }
-      return false;
+      if (teamEl) teamEl.click();
     });
 
-    if (teamClicked) {
-      console.log('✅ Clicked "Team" tab.');
-      await new Promise(r => setTimeout(r, 2000));
-    } else {
-      console.log('⚠️ "Team" tab not found or already on Team page. Proceeding...');
-    }
+    await new Promise(r => setTimeout(r, 2000));
 
-    // --- STEP 3.5: Flexible Click for "Droptimizers" Sub-Tab ---
+    // --- STEP 3.5: Click "Droptimizers" Sub-Tab ---
     console.log('👆 Attempting to click "Droptimizers" tab...');
-    const droptimizersClicked = await page.evaluate(() => {
+    await page.evaluate(() => {
       const elements = Array.from(document.querySelectorAll('a, button, div, span'));
       const dropEl = elements.find(e => e.textContent && e.textContent.trim().toLowerCase().includes('droptimizer'));
-      if (dropEl) {
-        dropEl.click();
-        return true;
-      }
-      return false;
+      if (dropEl) dropEl.click();
     });
 
-    if (droptimizersClicked) {
-      console.log('✅ Clicked "Droptimizers" tab.');
-      await new Promise(r => setTimeout(r, 3000));
-    } else {
-      console.log('⚠️ "Droptimizers" tab not found or already open. Proceeding to search member...');
-      await new Promise(r => setTimeout(r, 2000));
-    }
+    // --- STEP 3.6: Wait for Table/Content to Load ---
+    console.log('⏳ Waiting for Droptimizers table/data to load...');
+    await new Promise(r => setTimeout(r, 5000));
 
     // --- STEP 4: Search Member Row & Click Upload Arrow ---
     console.log(`🔍 Searching for Upload Icon next to member "${cleanCharName}"...`);
 
     const clickResult = await page.evaluate((targetChar) => {
-      const allRows = Array.from(document.querySelectorAll('tr, div'));
+      const allElements = Array.from(document.querySelectorAll('*'));
 
-      const matchedRow = allRows.reverse().find(el => {
-        const text = el.innerText || el.textContent || '';
-        return text.toLowerCase().includes(targetChar) && el.querySelector('button, svg');
+      // Find all elements containing character name
+      const matchedElements = allElements.filter(el => {
+        const text = (el.innerText || el.textContent || '').toLowerCase();
+        return text.includes(targetChar);
       });
 
-      if (!matchedRow) {
-        return { success: false, reason: `Character name "${targetChar}" not found in Team table` };
+      if (matchedElements.length === 0) {
+        return { success: false, reason: `Character name "${targetChar}" not found anywhere on the page` };
       }
 
-      const buttons = Array.from(matchedRow.querySelectorAll('button, svg, a'));
-
-      let uploadBtn = buttons.find(btn => {
-        const html = btn.outerHTML || '';
-        if (html.includes('trash') || html.includes('delete')) return false;
-        return true;
-      });
-
-      if (uploadBtn) {
-        if (uploadBtn.tagName === 'SVG' && uploadBtn.parentElement) {
-          uploadBtn.parentElement.click();
-        } else {
-          uploadBtn.click();
+      // Find the parent row/card container
+      for (const el of matchedElements.reverse()) {
+        const rowCandidate = el.closest('tr, div[class*="row"], div[class*="item"], div');
+        if (rowCandidate) {
+          const clickable = rowCandidate.querySelector('button, svg, a');
+          if (clickable) {
+            clickable.click();
+            return { success: true };
+          }
         }
-        return { success: true };
       }
 
-      return { success: false, reason: 'Upload button/icon not found inside character row' };
+      return { success: false, reason: 'Found character name, but no clickable upload button near it' };
     }, cleanCharName);
 
     if (!clickResult.success) {
