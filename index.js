@@ -59,7 +59,7 @@ client.on('messageCreate', async (message) => {
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800 });
 
-      // Block heavy media
+      // Block heavy media (Images/Fonts)
       await page.setRequestInterception(true);
       page.on('request', (req) => {
         const resourceType = req.resourceType();
@@ -94,48 +94,37 @@ client.on('messageCreate', async (message) => {
 
       console.log('👆 Waiting for Import droptimizer button...');
       
-      let imported = false;
+      // Find button coordinates and execute real mouse click
+      let buttonFound = false;
       try {
         await page.waitForFunction(() => {
           const btns = Array.from(document.querySelectorAll('button'));
           return btns.some(b => b.textContent.includes('Import droptimizer'));
         }, { timeout: 30000 });
 
-        imported = await page.evaluate(() => {
-          const buttons = Array.from(document.querySelectorAll('button'));
-          const targetBtn = buttons.find(b => b.textContent.includes('Import droptimizer'));
-          if (targetBtn) {
-            targetBtn.click();
-            return true;
-          }
-          return false;
+        const buttonElement = await page.evaluateHandle(() => {
+          const btns = Array.from(document.querySelectorAll('button'));
+          return btns.find(b => b.textContent.includes('Import droptimizer'));
         });
+
+        if (buttonElement) {
+          await buttonElement.click(); // Real click trigger
+          buttonFound = true;
+        }
       } catch (e) {
-        imported = false;
+        buttonFound = false;
       }
 
-      if (!imported) {
+      if (!buttonFound) {
         throw new Error("Import droptimizer button not found. Please refresh your SESSION_COOKIE in Render.");
       }
 
-      console.log('⌛ Waiting for modal input field to render...');
-      // Wait up to 15s specifically for input field to appear in DOM
-      await page.waitForSelector('input', { timeout: 15000 });
+      console.log('⌛ Waiting for modal input field...');
+      // Wait for input element to be available in DOM
+      const inputElement = await page.waitForSelector('input', { timeout: 20000 });
 
-      console.log('✍️ Locating and filling Raidbots URL...');
-      await page.evaluate((url) => {
-        const inputs = Array.from(document.querySelectorAll('input'));
-        const targetInput = inputs.find(i => i.offsetWidth > 0 || i.offsetHeight > 0) || inputs[0];
-        if (targetInput) {
-          targetInput.focus();
-          targetInput.value = url;
-          targetInput.dispatchEvent(new Event('input', { bubbles: true }));
-          targetInput.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-      }, raidbotsUrl);
-
-      // Backup keyboard type to ensure inputs are captured by React
-      await page.focus('input');
+      console.log('✍️ Typing Raidbots URL...');
+      await inputElement.focus();
       await page.keyboard.down('Control');
       await page.keyboard.press('A');
       await page.keyboard.up('Control');
