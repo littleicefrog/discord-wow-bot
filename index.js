@@ -1,6 +1,10 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const puppeteer = require('puppeteer');
 const http = require('http');
+const PQueue = require('p-queue').default;
+
+// Queue Control: Concurrency: 1 ဆိုသည်မှာ တစ်ကြိမ်လျှင် Task ၁ ခုသာ Run မည်ဟု ကန့်သတ်ခြင်းဖြစ်သည်
+const queue = new PQueue({ concurrency: 1 });
 
 // 1. Dummy Web Server for Render Health Check
 const PORT = process.env.PORT || 10000;
@@ -27,6 +31,144 @@ client.once('clientReady', () => {
   console.log('========================================');
 });
 
+// Task ကို သီးသန့် မောင်းနှင်ပေးမည့် Automation Function
+async function processRaidbotsTask(message, raidbotsUrl) {
+  const replyMsg = await message.reply('⏳ Processing...');
+
+  let browser;
+  try {
+    console.log(`🚀 [Queue Size: ${queue.size}] Launching Chromium for ${message.author.tag}...`);
+    browser = await puppeteer.launch({
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+      headless: "new",
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-extensions',
+        '--js-flags=--max-old-space-size=256'
+      ]
+    });
+
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 800 });
+
+    // Block heavy media
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const resourceType = req.resourceType();
+      if (['image', 'font', 'media'].includes(resourceType)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
+    // Pre-set session cookie
+    if (!process.env.SESSION_COOKIE) {
+      throw new Error("SESSION_COOKIE environment variable is missing on Render!");
+    }
+
+    const cleanCookie = process.env.SESSION_COOKIE.trim();
+
+    await page.setCookie({
+      name: '__Secure-next-auth.session-token',
+      value: cleanCookie,
+      domain: '.wowutils.com',
+      path: '/',
+      secure: true,
+      httpOnly: true,
+      sameSite: 'Lax'
+    });
+
+    console.log('📍 Navigating to WoWUtils Loot Tab...');
+    const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
+    await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+
+    console.log('👆 Waiting for Import droptimizer button...');
+    
+    let buttonFound = false;
+    try {
+      await page.waitForFunction(() => {
+        const btns = Array.from(document.querySelectorAll('button'));
+        return btns.some(b => b.textContent.includes('Import droptimizer'));
+      }, { timeout: 30000 });
+
+      const buttonElement = await page.evaluateHandle(() => {
+        const btns = Array.from(document.querySelectorAll('button'));
+        return btns.find(b => b.textContent.includes('Import droptimizer'));
+      });
+
+      if (buttonElement) {
+        await buttonElement.click();
+        buttonFound = true;
+      }
+    } catch (e) {
+      buttonFound = false;
+    }
+
+    if (!buttonFound) {
+      throw new Error("Import droptimizer button not found. Please refresh your SESSION_COOKIE in Render.");
+    }
+
+    console.log('⌛ Waiting for modal input field...');
+    const inputElement = await page.waitForSelector('input', { timeout: 20000 });
+
+    console.log('✍️ Typing Raidbots URL...');
+    await inputElement.focus();
+    await page.keyboard.down('Control');
+    await page.keyboard.press('A');
+    await page.keyboard.up('Control');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.type(raidbotsUrl, { delay: 10 });
+
+    await new Promise(r => setTimeout(r, 1000));
+
+    console.log('👆 Clicking Fetch Report button...');
+    const clickedFetch = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const fetchBtn = buttons.find(b => 
+        b.textContent.includes('Fetch Report') || 
+        b.textContent.includes('Import') ||
+        b.textContent.includes('Submit')
+      );
+      if (fetchBtn) {
+        fetchBtn.click();
+        return true;
+      }
+      return false;
+    });
+
+    if (!clickedFetch) {
+      await page.keyboard.press('Enter');
+    }
+
+    await new Promise(r => setTimeout(r, 5000));
+
+    await replyMsg.edit('✅ Completed!');
+    console.log('🎉 Task completed successfully!');
+
+  } catch (error) {
+    console.error('❌ Detailed Error Log:', error.message || error);
+    await replyMsg.edit(`❌ Failed to process: ${error.message || 'Unknown Error'}`);
+  } finally {
+    if (browser) {
+      console.log('🧹 Closing browser...');
+      await browser.close().catch(() => {});
+    }
+
+    setTimeout(async () => {
+      if (message.deletable) await message.delete().catch(() => {});
+      if (replyMsg.deletable) await replyMsg.delete().catch(() => {});
+    }, 5000);
+  }
+}
+
 // 4. Message Listener
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
@@ -34,144 +176,9 @@ client.on('messageCreate', async (message) => {
   if (message.content.includes('raidbots.com/simbot/report/')) {
     console.log(`📩 New Raidbots link received from ${message.author.tag}`);
     const raidbotsUrl = message.content.trim();
-    const replyMsg = await message.reply('⏳ Processing...');
 
-    let browser;
-    try {
-      console.log('🚀 Launching Chromium...');
-      browser = await puppeteer.launch({
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-        headless: "new",
-        args: [
-          '--no-sandbox', 
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process',
-          '--disable-extensions',
-          '--js-flags=--max-old-space-size=256'
-        ]
-      });
-
-      const page = await browser.newPage();
-      await page.setViewport({ width: 1280, height: 800 });
-
-      // Block heavy media (Images/Fonts)
-      await page.setRequestInterception(true);
-      page.on('request', (req) => {
-        const resourceType = req.resourceType();
-        if (['image', 'font', 'media'].includes(resourceType)) {
-          req.abort();
-        } else {
-          req.continue();
-        }
-      });
-
-      // Pre-set session cookie
-      console.log('🔑 Pre-setting session cookie...');
-      if (!process.env.SESSION_COOKIE) {
-        throw new Error("SESSION_COOKIE environment variable is missing on Render!");
-      }
-
-      const cleanCookie = process.env.SESSION_COOKIE.trim();
-
-      await page.setCookie({
-        name: '__Secure-next-auth.session-token',
-        value: cleanCookie,
-        domain: '.wowutils.com',
-        path: '/',
-        secure: true,
-        httpOnly: true,
-        sameSite: 'Lax'
-      });
-
-      console.log('📍 Navigating to WoWUtils Loot Tab...');
-      const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
-      await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
-
-      console.log('👆 Waiting for Import droptimizer button...');
-      
-      // Find button coordinates and execute real mouse click
-      let buttonFound = false;
-      try {
-        await page.waitForFunction(() => {
-          const btns = Array.from(document.querySelectorAll('button'));
-          return btns.some(b => b.textContent.includes('Import droptimizer'));
-        }, { timeout: 30000 });
-
-        const buttonElement = await page.evaluateHandle(() => {
-          const btns = Array.from(document.querySelectorAll('button'));
-          return btns.find(b => b.textContent.includes('Import droptimizer'));
-        });
-
-        if (buttonElement) {
-          await buttonElement.click(); // Real click trigger
-          buttonFound = true;
-        }
-      } catch (e) {
-        buttonFound = false;
-      }
-
-      if (!buttonFound) {
-        throw new Error("Import droptimizer button not found. Please refresh your SESSION_COOKIE in Render.");
-      }
-
-      console.log('⌛ Waiting for modal input field...');
-      // Wait for input element to be available in DOM
-      const inputElement = await page.waitForSelector('input', { timeout: 20000 });
-
-      console.log('✍️ Typing Raidbots URL...');
-      await inputElement.focus();
-      await page.keyboard.down('Control');
-      await page.keyboard.press('A');
-      await page.keyboard.up('Control');
-      await page.keyboard.press('Backspace');
-      await page.keyboard.type(raidbotsUrl, { delay: 10 });
-
-      await new Promise(r => setTimeout(r, 1000));
-
-      console.log('👆 Clicking Fetch Report button...');
-      const clickedFetch = await page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const fetchBtn = buttons.find(b => 
-          b.textContent.includes('Fetch Report') || 
-          b.textContent.includes('Import') ||
-          b.textContent.includes('Submit')
-        );
-        if (fetchBtn) {
-          fetchBtn.click();
-          return true;
-        }
-        return false;
-      });
-
-      if (!clickedFetch) {
-        console.log('⚠️ Fetch button not found via text, pressing Enter key...');
-        await page.keyboard.press('Enter');
-      }
-
-      await new Promise(r => setTimeout(r, 5000));
-
-      await replyMsg.edit('✅ Completed!');
-      console.log('🎉 Task completed successfully!');
-
-    } catch (error) {
-      console.error('❌ Detailed Error Log:', error.message || error);
-      await replyMsg.edit(`❌ Failed to process: ${error.message || 'Unknown Error'}`);
-    } finally {
-      if (browser) {
-        console.log('🧹 Closing browser...');
-        await browser.close().catch(() => {});
-      }
-
-      setTimeout(async () => {
-        if (message.deletable) await message.delete().catch(() => {});
-        if (replyMsg.deletable) await replyMsg.delete().catch(() => {});
-      }, 5000);
-    }
+    // Queue ထဲသို့ Task ထည့်သွင်းခြင်း (တစ်ကြိမ်လျှင် ၁ ခုသာ Run မည်)
+    queue.add(() => processRaidbotsTask(message, raidbotsUrl));
   }
 });
 

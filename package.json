@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "discord.js": "^14.14.1",
+    "p-queue": "^6.6.2",
     "puppeteer": "^25.8.0"
   }
 }
