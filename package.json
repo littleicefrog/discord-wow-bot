@@ -7,6 +7,6 @@
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "puppeteer": "^22.0.0"
+    "puppeteer": "^25.8.0"
   }
 }
