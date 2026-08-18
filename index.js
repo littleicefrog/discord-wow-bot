@@ -59,7 +59,7 @@ client.on('messageCreate', async (message) => {
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800 });
 
-      // Block only heavy media (Images/Fonts) - Keep Stylesheets for layout rendering
+      // Block only heavy media (Images/Fonts) - Keep Stylesheets
       await page.setRequestInterception(true);
       page.on('request', (req) => {
         const resourceType = req.resourceType();
@@ -94,7 +94,6 @@ client.on('messageCreate', async (message) => {
 
       console.log('👆 Waiting for Import droptimizer button...');
       
-      // Extended wait timeout to 30 seconds
       let imported = false;
       try {
         await page.waitForFunction(() => {
@@ -119,42 +118,35 @@ client.on('messageCreate', async (message) => {
         throw new Error("Import droptimizer button not found. Please refresh your SESSION_COOKIE in Render.");
       }
 
-      await new Promise(r => setTimeout(r, 2000));
+      console.log('⌛ Waiting for modal input field...');
+      // Wait explicitly up to 15s for an input field inside the modal overlay
+      await page.waitForSelector('input', { timeout: 15000 });
 
       console.log('✍️ Typing Raidbots URL...');
-      const inputFound = await page.evaluate((url) => {
-        const inputs = Array.from(document.querySelectorAll('input'));
-        const targetInput = inputs.find(i => 
-          i.type === 'text' || 
-          i.type === 'url' || 
-          (i.placeholder && i.placeholder.toLowerCase().includes('raidbots'))
-        ) || inputs[0];
-
-        if (targetInput) {
-          targetInput.value = url;
-          targetInput.dispatchEvent(new Event('input', { bubbles: true }));
-          targetInput.dispatchEvent(new Event('change', { bubbles: true }));
-          return true;
-        }
-        return false;
-      }, raidbotsUrl);
-
-      if (!inputFound) {
-        throw new Error("Modal input field for Raidbots URL was not found.");
-      }
+      await page.focus('input');
+      await page.type('input', raidbotsUrl, { delay: 20 });
 
       await new Promise(r => setTimeout(r, 1000));
 
       console.log('👆 Clicking Fetch Report button...');
-      await page.evaluate(() => {
+      const clickedFetch = await page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button'));
         const fetchBtn = buttons.find(b => 
           b.textContent.includes('Fetch Report') || 
           b.textContent.includes('Import') ||
           b.textContent.includes('Submit')
         );
-        if (fetchBtn) fetchBtn.click();
+        if (fetchBtn) {
+          fetchBtn.click();
+          return true;
+        }
+        return false;
       });
+
+      if (!clickedFetch) {
+        // Fallback: Press Enter key if fetch button isn't found
+        await page.keyboard.press('Enter');
+      }
 
       await new Promise(r => setTimeout(r, 5000));
 
