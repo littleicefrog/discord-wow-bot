@@ -82,11 +82,23 @@ client.on('messageCreate', async (message) => {
         console.log("Cookie Banner မပေါ်ပါ သို့မဟုတ် ကျော်သွားပါပြီ။");
       }
 
-      // Step D: "Import droptimizer" ခလုတ်ကို နှိပ်ခြင်း
+      // Step D: "Import droptimizer" ခလုတ်ကို နှိပ်ခြင်း (Selector စနစ်ကို DOM စစ်ဆေးနည်းဖြင့် ပြောင်းထားပါသည်)
       console.log('👆 Clicking Import droptimizer button...');
-      const importDroptimizerBtnSelector = 'button::-p-text(Import droptimizer)'; 
-      await page.waitForSelector(importDroptimizerBtnSelector, { timeout: 15000 });
-      await page.click(importDroptimizerBtnSelector);
+      await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15000 }).catch(() => {});
+      
+      const imported = await page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const targetBtn = buttons.find(b => b.textContent.includes('Import droptimizer'));
+        if (targetBtn) {
+          targetBtn.click();
+          return true;
+        }
+        return false;
+      });
+
+      if (!imported) {
+        throw new Error("Import droptimizer button ကို ရှာမတွေ့ပါ (SESSION_COOKIE မဝင်ထားခြင်း သို့မဟုတ် သက်တမ်းကုန်နေခြင်း ဖြစ်နိုင်သည်)");
+      }
 
       // Step E: Modal ပွင့်လာပြီး Link ထည့်ခြင်း
       console.log('✍️ Typing Raidbots URL...');
