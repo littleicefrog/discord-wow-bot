@@ -1,7 +1,17 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const puppeteer = require('puppeteer');
+const http = require('http');
 
-// 1. Discord Bot Client Setup
+// 1. Render Health Check / Port Scan အတွက် Dummy Web Server ဖွင့်ခြင်း (Free Tier အတွက်)
+const PORT = process.env.PORT || 10000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Discord Bot is alive!');
+}).listen(PORT, () => {
+  console.log(`Dummy web server listening on port ${PORT}`);
+});
+
+// 2. Discord Bot Client Setup
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -10,14 +20,14 @@ const client = new Client({
   ]
 });
 
-// 2. Bot Online Event
+// 3. Bot Online Event
 client.once('clientReady', () => {
   console.log('========================================');
   console.log(`✅ Success! Bot Online ဖြစ်သွားပါပြီ: ${client.user.tag}`);
   console.log('========================================');
 });
 
-// 3. Message Listener
+// 4. Message Listener
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
@@ -29,15 +39,15 @@ client.on('messageCreate', async (message) => {
     let browser;
     try {
       browser = await puppeteer.launch({
-  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-  headless: "new",
-  args: [
-    '--no-sandbox', 
-    '--disable-setuid-sandbox',
-    '--disable-dev-shm-usage',
-    '--single-process'
-  ]
-});
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+        headless: "new",
+        args: [
+          '--no-sandbox', 
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--single-process'
+        ]
+      });
 
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800 });
@@ -46,10 +56,10 @@ client.on('messageCreate', async (message) => {
       const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
       await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-      // Step B: Session Cookie ထည့်သွင်းခြင်း (Render Env Variable မှ ဖတ်ယူပါမည်)
+      // Step B: Session Cookie ထည့်သွင်းခြင်း
       await page.setCookie({
         name: '__Secure-next-auth.session-token',
-        value: process.env.SESSION_COOKIE, // 👈 ဒီနေရာတွင် process.env သုံးထားပါသည်
+        value: process.env.SESSION_COOKIE,
         path: '/',
         secure: true,
         httpOnly: true
@@ -89,6 +99,12 @@ client.on('messageCreate', async (message) => {
 
       await replyMsg.edit('✅ Completed!');
 
+      // Step H: Process ပြီးဆုံးပါက လာတင်ထားသော မူရင်း Link Message နှင့် Bot Reply ကို ၅ စက္ကန့်အကြာတွင် Auto Delete လုပ်ခြင်း
+      setTimeout(async () => {
+        if (message.deletable) await message.delete().catch(() => {});
+        if (replyMsg.deletable) await replyMsg.delete().catch(() => {});
+      }, 5000);
+
     } catch (error) {
       console.error('Automation Error Details:', error);
       await replyMsg.edit('❌ Failed to process the Raidbots link.');
@@ -103,16 +119,5 @@ process.on('unhandledRejection', (error) => {
   console.error('❌ Unhandled Error:', error);
 });
 
-// Discord Bot Login (Render Env Variable မှ ဖတ်ယူပါမည်)
-client.login(process.env.DISCORD_TOKEN); // 👈 ဒီနေရာတွင် process.env သုံးထားပါသည်
-
-const http = require('http');
-
-// Render ရဲ့ Health Check / Port Scan အတွက် Dummy Web Server
-const PORT = process.env.PORT || 10000;
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Discord Bot is alive!');
-}).listen(PORT, () => {
-  console.log(`Dummy server is listening on port ${PORT}`);
-});
+// Discord Bot Login
+client.login(process.env.DISCORD_TOKEN);
