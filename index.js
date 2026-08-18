@@ -1,5 +1,6 @@
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, AttachmentBuilder } = require('discord.js');
 const http = require('http');
+const fs = require('fs');
 
 let puppeteer;
 let queue;
@@ -27,6 +28,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
   const replyMsg = await message.reply('⏳ Fetching Raidbots character name...');
 
   let browser;
+  let page;
   try {
     console.log(`🚀 Launching Chromium for ${message.author.tag}...`);
     browser = await puppeteer.launch({
@@ -46,7 +48,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       ]
     });
 
-    const page = await browser.newPage();
+    page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -113,8 +115,8 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     const droptimizerDirectUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=team&subtab=droptimizers';
     await page.goto(droptimizerDirectUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
-    console.log('⏳ Waiting for page elements to load...');
-    await new Promise(r => setTimeout(r, 5000));
+    console.log('⏳ Waiting 6 seconds for page JS to render...');
+    await new Promise(r => setTimeout(r, 6000));
 
     // --- STEP 3: Search Member Row & Click Upload Arrow ---
     console.log(`🔍 Searching for Upload Icon next to member "${cleanCharName}"...`);
@@ -176,13 +178,11 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       if (fetchBtn) fetchBtn.click();
     });
 
-    // Fallback: Keyboard Enter
     await page.keyboard.press('Enter');
 
     // --- STEP 6: Wait and Click final "Import" Button ---
-    console.log('⏳ Waiting for "Import" button to appear on 2nd screen (Timeout: 60s)...');
+    console.log('⏳ Waiting for "Import" button to appear on 2nd screen...');
     
-    // Increased timeout to 60000ms (60 seconds)
     await page.waitForFunction(() => {
       const buttons = Array.from(document.querySelectorAll('button'));
       return buttons.some(b => b.textContent.trim() === 'Import');
@@ -210,6 +210,23 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
   } catch (error) {
     console.error('❌ Detailed Error Log:', error.message || error);
+    
+    // Take screenshot on error and send to Discord
+    if (page) {
+      try {
+        const screenshotPath = 'error.png';
+        await page.screenshot({ path: screenshotPath, fullPage: true });
+        const attachment = new AttachmentBuilder(screenshotPath);
+        await message.channel.send({ 
+          content: `❌ **Debug Info:** Bot ရဲ့ လက်ရှိ Screen အခြေအနေ ဖြစ်ပါတယ်။ (${error.message || 'Error occurred'})`, 
+          files: [attachment] 
+        });
+        if (fs.existsSync(screenshotPath)) fs.unlinkSync(screenshotPath);
+      } catch (screenshotError) {
+        console.error('Failed to capture screenshot:', screenshotError);
+      }
+    }
+
     await replyMsg.edit(`❌ Failed to process: ${error.message || 'Unknown Error'}`);
   } finally {
     if (browser) {
