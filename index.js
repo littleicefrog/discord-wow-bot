@@ -123,7 +123,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     console.log(`✅ Character Name: "${cleanCharName}"`);
     await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating to WoWUtils...`);
 
-    // --- STEP 2: Inject Cookies & Navigate to Group Hub ---
+    // --- STEP 2: Inject Cookies & Navigate directly to Roster/Gear ---
     if (!process.env.SESSION_COOKIE) {
       throw new Error("SESSION_COOKIE environment variable is missing on Render!");
     }
@@ -139,78 +139,62 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     });
 
     const mainGroupUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464';
-    console.log(`📍 Navigating to: ${mainGroupUrl}`);
+    console.log(`📍 Navigating to Group Hub: ${mainGroupUrl}`);
     
     await page.goto(mainGroupUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     await dismissCookieBanner(page);
 
-    // --- STEP 2.5: Expand Loot Menu ---
-    console.log('👇 Locating "Loot" in sidebar...');
+    // --- STEP 2.5: Click "Roster Report" or "Roster" in Navigation Sidebar ---
+    console.log('👇 Locating Roster Report / Gear table in navigation...');
+    
     await page.evaluate(() => {
-      const els = Array.from(document.querySelectorAll('a, button, span, div'));
-      const lootBtn = els.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'loot');
-      if (lootBtn) {
-        lootBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-        lootBtn.dispatchEvent(evt);
-        if (lootBtn.parentElement) lootBtn.parentElement.dispatchEvent(evt);
-      }
-    });
-
-    await new Promise(r => setTimeout(r, 2000));
-
-    // --- STEP 2.6: Click Droptimizers / Team Sub-menu ---
-    console.log('👆 Navigating to Droptimizer / Team table...');
-    await page.evaluate(() => {
-      const els = Array.from(document.querySelectorAll('a, button, span, div'));
-      const subItem = els.find(el => {
-        const txt = el.textContent ? el.textContent.trim().toLowerCase() : '';
-        return txt.includes('droptimizer') || txt === 'team';
+      const sidebarLinks = Array.from(document.querySelectorAll('a, button'));
+      const rosterBtn = sidebarLinks.find(el => {
+        const txt = (el.textContent || '').trim().toLowerCase();
+        return txt === 'roster report' || txt === 'roster';
       });
 
-      if (subItem) {
-        subItem.scrollIntoView({ behavior: 'instant', block: 'center' });
-        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-        subItem.dispatchEvent(evt);
+      if (rosterBtn) {
+        rosterBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+        rosterBtn.click();
       }
     });
 
-    console.log('⏳ Waiting for table view to render...');
-    await new Promise(r => setTimeout(r, 4000));
+    await new Promise(r => setTimeout(r, 3000));
     await dismissCookieBanner(page);
 
-    // --- STEP 3: Find Exact Character Row & Click Upload Icon Only ---
-    console.log(`🔍 Locating character row and upload icon for "${cleanCharName}"...`);
+    // --- STEP 3: Locate Exact Character Row & Trigger Import Modal ---
+    console.log(`🔍 Locating character row for "${cleanCharName}"...`);
 
     const clickResult = await page.evaluate((targetChar) => {
-      // Find character row elements specifically
-      const rows = Array.from(document.querySelectorAll('tr, div[class*="row"], div[class*="Row"]'));
+      // Look for rows containing text
+      const allRows = Array.from(document.querySelectorAll('tr, div[class*="row"], div[class*="Row"], div[class*="character"]'));
       
-      const charRow = rows.find(r => {
+      const targetRow = allRows.find(r => {
         const text = r.textContent.toLowerCase();
-        return text.includes(targetChar);
+        return text.includes(targetChar) && !r.querySelector('input');
       });
 
-      if (!charRow) {
-        return { success: false, reason: `Row for character "${targetChar}" not found.` };
+      if (!targetRow) {
+        return { success: false, reason: `Character "${targetChar}" not found on page.` };
       }
 
-      // Find upload/import button inside that specific row (avoid clicking row name itself)
-      const actionBtns = Array.from(charRow.querySelectorAll('button, svg, a'));
-      const uploadBtn = actionBtns.find(b => {
-        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-        const title = (b.getAttribute('title') || '').toLowerCase();
+      // Find upload/import icon button specifically within that row
+      const clickableIcons = Array.from(targetRow.querySelectorAll('button, svg, a'));
+      const uploadBtn = clickableIcons.find(icon => {
+        const aria = (icon.getAttribute('aria-label') || '').toLowerCase();
+        const title = (icon.getAttribute('title') || '').toLowerCase();
         return aria.includes('upload') || aria.includes('import') || title.includes('upload') || title.includes('import');
-      }) || actionBtns.find(b => b.tagName === 'BUTTON' || (b.tagName === 'SVG' && b.parentElement?.tagName === 'BUTTON'));
+      }) || targetRow.querySelector('button');
 
       if (uploadBtn) {
-        const clickEvt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-        uploadBtn.dispatchEvent(clickEvt);
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        uploadBtn.dispatchEvent(evt);
         if (typeof uploadBtn.click === 'function') uploadBtn.click();
         return { success: true };
       }
 
-      return { success: false, reason: 'Upload button icon missing inside character row.' };
+      return { success: false, reason: 'Upload icon button missing inside character row.' };
     }, cleanCharName);
 
     if (!clickResult.success) {
