@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const http = require('http');
 
-// Global variables for dynamic modules
+// Global variables for dynamic ESM modules
 let puppeteer;
 let queue;
 
@@ -23,7 +23,7 @@ const client = new Client({
   ]
 });
 
-// Task ကို သီးသန့် မောင်းနှင်ပေးမည့် Automation Function
+// Automation Process Function
 async function processRaidbotsTask(message, raidbotsUrl) {
   const replyMsg = await message.reply('⏳ Processing...');
 
@@ -163,8 +163,11 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
 // Dynamic Imports & Initialize Bot
 async function init() {
-  puppeteer = (await import('puppeteer')).default;
-  const PQueue = (await import('p-queue')).default;
+  const puppeteerModule = await import('puppeteer');
+  puppeteer = puppeteerModule.default || puppeteerModule;
+
+  const pQueueModule = await import('p-queue');
+  const PQueue = pQueueModule.default.default || pQueueModule.default || pQueueModule;
   queue = new PQueue({ concurrency: 1 });
 
   // 3. Bot Online Event
