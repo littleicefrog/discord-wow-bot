@@ -103,7 +103,7 @@ client.on('messageCreate', async (message) => {
       });
 
       if (!imported) {
-        throw new Error("Import droptimizer button မတွေ့ပါ။ Cookie မဝင်ပါ သို့မဟုတ် သက်တမ်းကုန်နေပါသည်။");
+        throw new Error("Cookie expired or Import button not found.");
       }
 
       console.log('✍️ Typing Raidbots URL...');
