@@ -23,6 +23,23 @@ const client = new Client({
   ]
 });
 
+// Helper function to handle Cookie Banners
+async function dismissCookieBanner(page) {
+  try {
+    await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const acceptBtn = buttons.find(b => {
+        const txt = (b.textContent || '').toLowerCase();
+        return txt.includes('accept all') || txt.includes('accept') || txt.includes('agree') || txt.includes('allow');
+      });
+      if (acceptBtn) acceptBtn.click();
+    });
+    await new Promise(r => setTimeout(r, 1000));
+  } catch (e) {
+    // Ignore cookie errors
+  }
+}
+
 // Automation Process Function
 async function processRaidbotsTask(message, raidbotsUrl) {
   const replyMsg = await message.reply('⏳ Fetching Raidbots character name...');
@@ -96,7 +113,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     console.log(`✅ Extracted Character Name: "${cleanCharName}"`);
     await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating to WoWUtils...`);
 
-    // --- STEP 2: Navigate directly to WoWUtils Droptimizer Page ---
+    // --- STEP 2: Navigate to WoWUtils Group Hub ---
     if (!process.env.SESSION_COOKIE) {
       throw new Error("SESSION_COOKIE environment variable is missing on Render!");
     }
@@ -111,25 +128,43 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       sameSite: 'Lax'
     });
 
-    console.log('📍 Navigating directly to WoWUtils Team Droptimizers Page...');
-    const droptimizerDirectUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=team&subtab=droptimizers';
-    
-    // Use networkidle2 so background API calls complete
-    await page.goto(droptimizerDirectUrl, { waitUntil: 'networkidle2', timeout: 90000 }).catch(async () => {
-      console.log('⚠️ Networkidle2 timed out, falling back to basic wait...');
+    console.log('📍 Navigating to WoWUtils Group Main Page...');
+    const groupBaseUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464';
+    await page.goto(groupBaseUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+
+    await new Promise(r => setTimeout(r, 4000));
+    await dismissCookieBanner(page);
+
+    // --- STEP 2.5: Ensure Navigation to "Group Hub" -> "Team" -> "Droptimizers" ---
+    console.log('👆 Step 2.1: Clicking "Group Hub"...');
+    await page.evaluate(() => {
+      const elements = Array.from(document.querySelectorAll('a, button, span, div'));
+      const gh = elements.find(e => e.textContent && e.textContent.trim() === 'Group Hub');
+      if (gh) gh.click();
     });
 
-    console.log('⏳ Waiting for skeleton loaders to finish and actual content to appear...');
-    
-    // Explicitly wait until target character text or rows render
-    await page.waitForFunction((targetChar) => {
-      const textContent = document.body.innerText || '';
-      return textContent.toLowerCase().includes(targetChar.toLowerCase());
-    }, { timeout: 30000 }, cleanCharName).catch(() => {
-      console.log('⚠️ Target character name not detected in standard wait, proceeding to dynamic search...');
+    await new Promise(r => setTimeout(r, 2000));
+    await dismissCookieBanner(page);
+
+    console.log('👆 Step 2.2: Clicking "Team" tab...');
+    await page.evaluate(() => {
+      const elements = Array.from(document.querySelectorAll('a, button, span, div'));
+      const team = elements.find(e => e.textContent && e.textContent.trim() === 'Team');
+      if (team) team.click();
     });
 
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 2000));
+
+    console.log('👆 Step 2.3: Clicking "Droptimizers" subtab...');
+    await page.evaluate(() => {
+      const elements = Array.from(document.querySelectorAll('a, button, span, div'));
+      const drop = elements.find(e => e.textContent && e.textContent.trim().toLowerCase().includes('droptimizer'));
+      if (drop) drop.click();
+    });
+
+    console.log('⏳ Waiting 5 seconds for Droptimizer table to load...');
+    await new Promise(r => setTimeout(r, 5000));
+    await dismissCookieBanner(page);
 
     // --- STEP 3: Search Member Row & Click Upload Arrow ---
     console.log(`🔍 Searching for Upload Icon next to member "${cleanCharName}"...`);
