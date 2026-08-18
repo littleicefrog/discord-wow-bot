@@ -59,7 +59,7 @@ client.on('messageCreate', async (message) => {
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800 });
 
-      // Block only heavy media (Images/Fonts) - Keep Stylesheets
+      // Block heavy media
       await page.setRequestInterception(true);
       page.on('request', (req) => {
         const resourceType = req.resourceType();
@@ -118,14 +118,27 @@ client.on('messageCreate', async (message) => {
         throw new Error("Import droptimizer button not found. Please refresh your SESSION_COOKIE in Render.");
       }
 
-      console.log('⌛ Waiting for modal input field...');
-      // Wait explicitly up to 15s for an input field inside the modal overlay
-      await page.waitForSelector('input', { timeout: 15000 });
+      console.log('⌛ Waiting for modal overlay to open...');
+      await new Promise(r => setTimeout(r, 2000));
 
-      console.log('✍️ Typing Raidbots URL...');
-      await page.focus('input');
-      await page.type('input', raidbotsUrl, { delay: 20 });
+      console.log('✍️ Locating and filling Raidbots URL...');
+      // Flexible Selector Detection inside DOM
+      const inputSelector = await page.evaluate(() => {
+        const allInputs = Array.from(document.querySelectorAll('input, textarea'));
+        if (allInputs.length > 0) {
+          const visibleInput = allInputs.find(i => i.offsetWidth > 0 && i.offsetHeight > 0) || allInputs[0];
+          visibleInput.focus();
+          return true;
+        }
+        return false;
+      });
 
+      if (!inputSelector) {
+        throw new Error("Could not find any input field in the modal.");
+      }
+
+      // Type the link into the focused element directly
+      await page.keyboard.type(raidbotsUrl, { delay: 10 });
       await new Promise(r => setTimeout(r, 1000));
 
       console.log('👆 Clicking Fetch Report button...');
@@ -144,7 +157,7 @@ client.on('messageCreate', async (message) => {
       });
 
       if (!clickedFetch) {
-        // Fallback: Press Enter key if fetch button isn't found
+        console.log('⚠️ Fetch button not found via text, pressing Enter key...');
         await page.keyboard.press('Enter');
       }
 
