@@ -146,41 +146,32 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     // --- STEP 2.5: Expand Loot Menu ---
     console.log('👇 Locating "Loot" in sidebar...');
-    
-    const lootExpanded = await page.evaluate(() => {
-      const els = Array.from(document.querySelectorAll('a, button, span, div, p'));
+    await page.evaluate(() => {
+      const els = Array.from(document.querySelectorAll('a, button, span, div'));
       const lootBtn = els.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'loot');
-
       if (lootBtn) {
         lootBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-        lootBtn.dispatchEvent(clickEvent);
-        if (lootBtn.parentElement) lootBtn.parentElement.dispatchEvent(clickEvent);
-        return true;
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        lootBtn.dispatchEvent(evt);
+        if (lootBtn.parentElement) lootBtn.parentElement.dispatchEvent(evt);
       }
-      return false;
     });
 
-    if (!lootExpanded) {
-      throw new Error('Could not locate "Loot" menu item in sidebar.');
-    }
-
-    console.log('⏳ Waiting for Loot accordion to expand...');
     await new Promise(r => setTimeout(r, 2000));
 
-    // --- STEP 2.6: Click Sub-item ---
-    console.log('👆 Clicking Droptimizer / Team sub-item...');
+    // --- STEP 2.6: Click Droptimizers / Team Sub-menu ---
+    console.log('👆 Navigating to Droptimizer / Team table...');
     await page.evaluate(() => {
       const els = Array.from(document.querySelectorAll('a, button, span, div'));
       const subItem = els.find(el => {
         const txt = el.textContent ? el.textContent.trim().toLowerCase() : '';
-        return txt.includes('droptimizer') || txt === 'team' || txt === 'gear';
+        return txt.includes('droptimizer') || txt === 'team';
       });
 
       if (subItem) {
         subItem.scrollIntoView({ behavior: 'instant', block: 'center' });
-        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-        subItem.dispatchEvent(clickEvent);
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        subItem.dispatchEvent(evt);
       }
     });
 
@@ -188,49 +179,38 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     await new Promise(r => setTimeout(r, 4000));
     await dismissCookieBanner(page);
 
-    // --- STEP 3: Find Character Row & Safe Click Upload Icon ---
-    console.log(`🔍 Locating character row for "${cleanCharName}"...`);
+    // --- STEP 3: Find Exact Character Row & Click Upload Icon Only ---
+    console.log(`🔍 Locating character row and upload icon for "${cleanCharName}"...`);
 
     const clickResult = await page.evaluate((targetChar) => {
-      const allElements = Array.from(document.querySelectorAll('*'));
+      // Find character row elements specifically
+      const rows = Array.from(document.querySelectorAll('tr, div[class*="row"], div[class*="Row"]'));
       
-      const nameEl = allElements.find(el => {
-        return el.children.length === 0 && el.textContent.toLowerCase().trim() === targetChar;
-      }) || allElements.find(el => el.textContent.toLowerCase().includes(targetChar));
+      const charRow = rows.find(r => {
+        const text = r.textContent.toLowerCase();
+        return text.includes(targetChar);
+      });
 
-      if (!nameEl) {
-        return { success: false, reason: `Character "${targetChar}" not found on page.` };
+      if (!charRow) {
+        return { success: false, reason: `Row for character "${targetChar}" not found.` };
       }
 
-      // Find character container row
-      const row = nameEl.closest('tr, div[class*="row"], div[class*="item"], div[class*="Character"], li');
-      if (!row) {
-        return { success: false, reason: 'Parent row container not found.' };
-      }
-
-      // Safe button finder with event dispatching
-      const buttons = Array.from(row.querySelectorAll('button, a, svg'));
-      let uploadTarget = buttons.find(b => {
+      // Find upload/import button inside that specific row (avoid clicking row name itself)
+      const actionBtns = Array.from(charRow.querySelectorAll('button, svg, a'));
+      const uploadBtn = actionBtns.find(b => {
         const aria = (b.getAttribute('aria-label') || '').toLowerCase();
         const title = (b.getAttribute('title') || '').toLowerCase();
         return aria.includes('upload') || aria.includes('import') || title.includes('upload') || title.includes('import');
-      });
+      }) || actionBtns.find(b => b.tagName === 'BUTTON' || (b.tagName === 'SVG' && b.parentElement?.tagName === 'BUTTON'));
 
-      if (!uploadTarget) {
-        // Fallback to interactive clickable element inside row
-        uploadTarget = buttons.find(b => b.tagName === 'BUTTON' || b.tagName === 'A') || row.querySelector('svg')?.parentElement;
-      }
-
-      if (uploadTarget) {
-        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-        uploadTarget.dispatchEvent(clickEvent);
-        if (typeof uploadTarget.click === 'function') {
-          uploadTarget.click();
-        }
+      if (uploadBtn) {
+        const clickEvt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        uploadBtn.dispatchEvent(clickEvt);
+        if (typeof uploadBtn.click === 'function') uploadBtn.click();
         return { success: true };
       }
 
-      return { success: false, reason: 'Upload button icon not detected inside the row.' };
+      return { success: false, reason: 'Upload button icon missing inside character row.' };
     }, cleanCharName);
 
     if (!clickResult.success) {
