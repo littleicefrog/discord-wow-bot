@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const puppeteer = require('puppeteer');
 const http = require('http');
 
-// 1. Render Health Check / Port Scan အတွက် Dummy Web Server
+// 1. Dummy Web Server for Render Health Check / Port Scan (Free Tier)
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -23,7 +23,7 @@ const client = new Client({
 // 3. Bot Online Event
 client.once('clientReady', () => {
   console.log('========================================');
-  console.log(`✅ Success! Bot Online ဖြစ်သွားပါပြီ: ${client.user.tag}`);
+  console.log(`✅ Success! Bot is online as: ${client.user.tag}`);
   console.log('========================================');
 });
 
@@ -31,13 +31,15 @@ client.once('clientReady', () => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
+  // Check if the message contains a Raidbots Droptimizer link
   if (message.content.includes('raidbots.com/simbot/report/')) {
+    console.log(`📩 New Raidbots link received from ${message.author.tag}`);
     const raidbotsUrl = message.content.trim();
     const replyMsg = await message.reply('⏳ Processing...');
 
     let browser;
     try {
-      console.log('🚀 Launching Chromium with low-memory args...');
+      console.log('🚀 Launching Chromium...');
       browser = await puppeteer.launch({
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
         headless: "new",
@@ -51,59 +53,60 @@ client.on('messageCreate', async (message) => {
           '--no-zygote',
           '--single-process',
           '--disable-extensions',
-          '--js-flags=--max-old-space-size=256' // RAM စားနည်းအောင် ကန့်သတ်ခြင်း
+          '--js-flags=--max-old-space-size=256'
         ]
       });
 
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800 });
 
-      // CSS/Images များကို Block လုပ်၍ RAM နှင့် Speed ပိုမြန်အောင်ပြုလုပ်ခြင်း
-      await page.setRequestInterception(true);
-      page.on('request', (req) => {
-        if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
-          req.abort();
-        } else {
-          req.continue();
-        }
-      });
-
-      console.log('📍 Navigating to WoWUtils...');
-      const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
-      await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-
-      console.log('🔑 Setting session cookie...');
+      // Pre-set session cookie before visiting the page
+      console.log('🔑 Pre-setting session cookie...');
       if (!process.env.SESSION_COOKIE) {
-        throw new Error("Render ထဲတွင် SESSION_COOKIE variable မရှိပါ!");
+        throw new Error("SESSION_COOKIE environment variable is missing on Render!");
       }
+
+      const cleanCookie = process.env.SESSION_COOKIE.trim();
 
       await page.setCookie({
         name: '__Secure-next-auth.session-token',
-        value: process.env.SESSION_COOKIE.trim(),
+        value: cleanCookie,
+        domain: '.wowutils.com',
         path: '/',
-        domain: 'wowutils.com',
         secure: true,
-        httpOnly: true
+        httpOnly: true,
+        sameSite: 'Lax'
       });
 
-      console.log('🔄 Reloading page...');
-      await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 });
+      console.log('📍 Navigating to WoWUtils Loot Tab...');
+      const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
+      await page.goto(wishlistUrl, { waitUntil: 'networkidle2', timeout: 60000 });
 
-      console.log('👆 Looking for Import droptimizer button...');
-      await new Promise(r => setTimeout(r, 4000));
+      console.log('👆 Waiting for Import droptimizer button...');
       
-      const imported = await page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const targetBtn = buttons.find(b => b.textContent.includes('Import droptimizer'));
-        if (targetBtn) {
-          targetBtn.click();
-          return true;
-        }
-        return false;
-      });
+      // Wait for the Import button to appear (Max 15 seconds)
+      let imported = false;
+      try {
+        await page.waitForFunction(() => {
+          const btns = Array.from(document.querySelectorAll('button'));
+          return btns.some(b => b.textContent.includes('Import droptimizer'));
+        }, { timeout: 15000 });
+
+        imported = await page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll('button'));
+          const targetBtn = buttons.find(b => b.textContent.includes('Import droptimizer'));
+          if (targetBtn) {
+            targetBtn.click();
+            return true;
+          }
+          return false;
+        });
+      } catch (e) {
+        imported = false;
+      }
 
       if (!imported) {
-        throw new Error("Cookie expired or Import button not found.");
+        throw new Error("Import droptimizer button not found. The cookie may be expired or invalid.");
       }
 
       console.log('✍️ Typing Raidbots URL...');
@@ -112,9 +115,11 @@ client.on('messageCreate', async (message) => {
       await page.type(linkInputSelector, raidbotsUrl);
 
       console.log('👆 Clicking Fetch Report button...');
-      const submitBtnSelector = 'button::-p-text(Fetch Report)'; 
-      await page.waitForSelector(submitBtnSelector, { timeout: 5000 });
-      await page.click(submitBtnSelector);
+      await page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const fetchBtn = buttons.find(b => b.textContent.includes('Fetch Report') || b.textContent.includes('Import'));
+        if (fetchBtn) fetchBtn.click();
+      });
 
       await new Promise(r => setTimeout(r, 5000));
 
@@ -130,7 +135,7 @@ client.on('messageCreate', async (message) => {
         await browser.close().catch(() => {});
       }
 
-      // Success ဖြစ်ဖြစ် Fail ဖြစ်ဖြစ် ၅ စက္ကန့်အကြာတွင် Auto Delete လုပ်ခြင်း
+      // Auto delete original message and reply message after 5 seconds
       setTimeout(async () => {
         if (message.deletable) await message.delete().catch(() => {});
         if (replyMsg.deletable) await replyMsg.delete().catch(() => {});
