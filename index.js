@@ -23,7 +23,7 @@ const client = new Client({
   ]
 });
 
-// Helper function to force dismiss Cookie Banner or remove it from DOM
+// Helper function to dismiss cookie banners/overlays
 async function dismissCookieBanner(page) {
   try {
     await page.evaluate(() => {
@@ -34,17 +34,17 @@ async function dismissCookieBanner(page) {
       });
       if (acceptBtn) acceptBtn.click();
 
-      const overlayElements = Array.from(document.querySelectorAll('div, section, iframe')).filter(el => {
+      // Remove overlays blocking UI
+      const overlays = Array.from(document.querySelectorAll('div, section')).filter(el => {
         const txt = (el.textContent || '').toLowerCase();
-        return txt.includes('we value your privacy') || txt.includes('our 1015 partners') || txt.includes('cookie policy');
+        return txt.includes('we value your privacy') || txt.includes('cookie policy');
       });
-
-      overlayElements.forEach(el => {
-        const modal = el.closest('div[class*="cookie"], div[class*="modal"], div[class*="banner"], div[style*="z-index"]') || el;
+      overlays.forEach(el => {
+        const modal = el.closest('div[class*="cookie"], div[class*="modal"]') || el;
         modal.remove();
       });
     });
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 1000));
   } catch (e) {
     // Ignore error
   }
@@ -91,9 +91,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     });
 
     // --- STEP 1: Fetch Character Name Fast ---
-    console.log(`🔎 Reading character name from Raidbots Link: ${raidbotsUrl}`);
-    
-    // Fast Strategy 1: Page Navigation with Light Wait
+    console.log(`🔎 Fetching character name from Raidbots...`);
     let characterName = null;
     try {
       await page.goto(raidbotsUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -114,18 +112,18 @@ async function processRaidbotsTask(message, raidbotsUrl) {
         return null;
       });
     } catch (e) {
-      console.log('⚠️ Page load timeout on Raidbots, attempting fallback parsing...');
+      console.log('⚠️ Fast fetch timeout, checking back-up...');
     }
 
     if (!characterName) {
-      throw new Error("Could not extract WoW Character Name from Raidbots link! Please check if the link is valid.");
+      throw new Error("Could not extract WoW Character Name from Raidbots link!");
     }
 
     const cleanCharName = characterName.toLowerCase().trim();
-    console.log(`✅ Extracted Character Name: "${cleanCharName}"`);
-    await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating to WoWUtils...`);
+    console.log(`✅ Character Name: "${cleanCharName}"`);
+    await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating directly to Droptimizers...`);
 
-    // --- STEP 2: Navigate with Session Cookie ---
+    // --- STEP 2: Inject Cookies & Navigate Directly to Droptimizers URL ---
     if (!process.env.SESSION_COOKIE) {
       throw new Error("SESSION_COOKIE environment variable is missing on Render!");
     }
@@ -140,43 +138,33 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       sameSite: 'Lax'
     });
 
-    console.log('📍 Navigating to WoWUtils Group Hub Page...');
-    await page.goto('https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464', { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-    await dismissCookieBanner(page);
-
-    // --- STEP 2.5: Navigation Sequence: TRACKING > Loot > Team > Droptimizers ---
-    console.log('👆 Step A: Clicking "Loot"...');
-    await page.evaluate(() => {
-      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
-      const lootBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'loot');
-      if (lootBtn) lootBtn.click();
-    });
-
-    await new Promise(r => setTimeout(r, 2000));
-    await dismissCookieBanner(page);
-
-    console.log('👆 Step B: Clicking "Team"...');
-    await page.evaluate(() => {
-      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
-      const teamBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'team');
-      if (teamBtn) teamBtn.click();
-    });
-
-    await new Promise(r => setTimeout(r, 2000));
-
-    console.log('👆 Step C: Clicking "Droptimizer"...');
-    await page.evaluate(() => {
-      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
-      const dropBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase().includes('droptimizer'));
-      if (dropBtn) dropBtn.click();
-    });
-
-    console.log('⏳ Waiting for Droptimizer table to load...');
+    // Go directly to the Droptimizers view URL under NENM group
+    const droptimizerUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=team&subtab=droptimizers';
+    console.log(`📍 Navigating directly to: ${droptimizerUrl}`);
+    
+    await page.goto(droptimizerUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await new Promise(r => setTimeout(r, 4000));
     await dismissCookieBanner(page);
 
-    // --- STEP 3: Search Character Row & Click Upload Icon ---
+    // If still on overview tab, attempt explicit tab switch in DOM
+    await page.evaluate(() => {
+      const allBtns = Array.from(document.querySelectorAll('button, a, div'));
+      const teamTab = allBtns.find(b => b.textContent && b.textContent.trim().toLowerCase() === 'team');
+      if (teamTab) teamTab.click();
+    });
+
+    await new Promise(r => setTimeout(r, 2000));
+
+    await page.evaluate(() => {
+      const allBtns = Array.from(document.querySelectorAll('button, a, div'));
+      const dropTab = allBtns.find(b => b.textContent && b.textContent.trim().toLowerCase().includes('droptimizer'));
+      if (dropTab) dropTab.click();
+    });
+
+    await new Promise(r => setTimeout(r, 3000));
+    await dismissCookieBanner(page);
+
+    // --- STEP 3: Find Character Row & Click Upload Icon ---
     console.log(`🔍 Locating character row for "${cleanCharName}"...`);
 
     const clickResult = await page.evaluate((targetChar) => {
