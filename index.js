@@ -23,20 +23,30 @@ const client = new Client({
   ]
 });
 
-// Helper function to handle Cookie Banners
+// Helper function to force dismiss Cookie Banner or remove it from DOM
 async function dismissCookieBanner(page) {
   try {
     await page.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll('button'));
+      const buttons = Array.from(document.querySelectorAll('button, a'));
       const acceptBtn = buttons.find(b => {
-        const txt = (b.textContent || '').toLowerCase();
-        return txt.includes('accept all') || txt.includes('accept') || txt.includes('agree') || txt.includes('allow');
+        const txt = (b.textContent || '').toLowerCase().trim();
+        return txt === 'accept all' || txt.includes('accept');
       });
       if (acceptBtn) acceptBtn.click();
+
+      const overlayElements = Array.from(document.querySelectorAll('div, section, iframe')).filter(el => {
+        const txt = (el.textContent || '').toLowerCase();
+        return txt.includes('we value your privacy') || txt.includes('our 1015 partners') || txt.includes('cookie policy');
+      });
+
+      overlayElements.forEach(el => {
+        const modal = el.closest('div[class*="cookie"], div[class*="modal"], div[class*="banner"], div[style*="z-index"]') || el;
+        modal.remove();
+      });
     });
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1500));
   } catch (e) {
-    // Ignore cookie errors
+    // Ignore error
   }
 }
 
@@ -67,10 +77,9 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
-
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-    // Block heavy media (Images/Fonts)
+    // Block heavy media
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const resourceType = req.resourceType();
@@ -81,32 +90,35 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       }
     });
 
-    // --- STEP 1: Fetch Character Name directly from Raidbots Link ---
+    // --- STEP 1: Fetch Character Name Fast ---
     console.log(`🔎 Reading character name from Raidbots Link: ${raidbotsUrl}`);
-    await page.goto(raidbotsUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    
+    // Fast Strategy 1: Page Navigation with Light Wait
+    let characterName = null;
+    try {
+      await page.goto(raidbotsUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await new Promise(r => setTimeout(r, 2000));
 
-    await page.waitForSelector('h1, header, .character-name', { timeout: 15000 }).catch(() => {});
+      characterName = await page.evaluate(() => {
+        const titleText = document.title;
+        const titleMatch = titleText.match(/-\s*([A-Za-z0-9]+)\s*-/);
+        if (titleMatch && titleMatch[1]) return titleMatch[1].trim();
 
-    const characterName = await page.evaluate(() => {
-      const titleText = document.title;
-      const titleMatch = titleText.match(/-\s*([A-Za-z0-9]+)\s*-/);
-      if (titleMatch && titleMatch[1]) {
-        return titleMatch[1].trim();
-      }
-
-      const headings = Array.from(document.querySelectorAll('h1, h2, header'));
-      for (const h of headings) {
-        if (h.textContent && h.textContent.trim().length > 0) {
-          const firstWord = h.textContent.trim().split(/[\s-]+/)[0];
-          if (firstWord && firstWord.length > 2) return firstWord;
+        const headings = Array.from(document.querySelectorAll('h1, h2, header, .character-name'));
+        for (const h of headings) {
+          if (h.textContent && h.textContent.trim().length > 0) {
+            const firstWord = h.textContent.trim().split(/[\s-]+/)[0];
+            if (firstWord && firstWord.length > 2 && firstWord.toLowerCase() !== 'raidbots') return firstWord;
+          }
         }
-      }
-
-      return null;
-    });
+        return null;
+      });
+    } catch (e) {
+      console.log('⚠️ Page load timeout on Raidbots, attempting fallback parsing...');
+    }
 
     if (!characterName) {
-      throw new Error("Could not extract WoW Character Name from the provided Raidbots link!");
+      throw new Error("Could not extract WoW Character Name from Raidbots link! Please check if the link is valid.");
     }
 
     const cleanCharName = characterName.toLowerCase().trim();
@@ -129,20 +141,19 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     });
 
     console.log('📍 Navigating to WoWUtils Group Hub Page...');
-    await page.goto('https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464', { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.goto('https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-    await new Promise(r => setTimeout(r, 4000));
     await dismissCookieBanner(page);
 
     // --- STEP 2.5: Navigation Sequence: TRACKING > Loot > Team > Droptimizers ---
-    console.log('👆 Step A: Clicking "Loot" in TRACKING Section...');
+    console.log('👆 Step A: Clicking "Loot"...');
     await page.evaluate(() => {
       const elements = Array.from(document.querySelectorAll('a, button, div, span'));
       const lootBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'loot');
       if (lootBtn) lootBtn.click();
     });
 
-    await new Promise(r => setTimeout(r, 2500));
+    await new Promise(r => setTimeout(r, 2000));
     await dismissCookieBanner(page);
 
     console.log('👆 Step B: Clicking "Team"...');
@@ -154,7 +165,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     await new Promise(r => setTimeout(r, 2000));
 
-    console.log('👆 Step C: Clicking "Droptimizer" or "Droptimizers"...');
+    console.log('👆 Step C: Clicking "Droptimizer"...');
     await page.evaluate(() => {
       const elements = Array.from(document.querySelectorAll('a, button, div, span'));
       const dropBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase().includes('droptimizer'));
@@ -162,11 +173,11 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     });
 
     console.log('⏳ Waiting for Droptimizer table to load...');
-    await new Promise(r => setTimeout(r, 5000));
+    await new Promise(r => setTimeout(r, 4000));
     await dismissCookieBanner(page);
 
     // --- STEP 3: Search Character Row & Click Upload Icon ---
-    console.log(`🔍 Locating character row for "${cleanCharName}" and finding Upload button...`);
+    console.log(`🔍 Locating character row for "${cleanCharName}"...`);
 
     const clickResult = await page.evaluate((targetChar) => {
       const allElements = Array.from(document.querySelectorAll('*'));
@@ -228,7 +239,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     await page.keyboard.press('Enter');
 
     // --- STEP 6: Wait and Click final "Import" Button ---
-    console.log('⏳ Waiting for "Import" button to appear on 2nd screen...');
+    console.log('⏳ Waiting for "Import" button...');
     
     await page.waitForFunction(() => {
       const buttons = Array.from(document.querySelectorAll('button'));
