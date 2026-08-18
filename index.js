@@ -34,7 +34,7 @@ async function dismissCookieBanner(page) {
       });
       if (acceptBtn) acceptBtn.click();
 
-      // Force remove overlay elements
+      // Force remove overlay elements blocking UI
       const overlays = Array.from(document.querySelectorAll('div, section')).filter(el => {
         const txt = (el.textContent || '').toLowerCase();
         return txt.includes('we value your privacy') || txt.includes('cookie policy');
@@ -144,33 +144,38 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     await page.goto(mainGroupUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     await dismissCookieBanner(page);
 
-    // --- STEP 2.5: Scroll Down Sidebar & Click TRACKING -> Loot ---
-    console.log('👇 Scrolling Left Sidebar & Clicking "Loot"...');
+    // --- STEP 2.5: Direct Scroll to Element & Click TRACKING -> Loot ---
+    console.log('👇 Locating "Loot" element and bringing into view...');
     
     const lootClicked = await page.evaluate(() => {
-      // Find left sidebar element and scroll down
-      const sidebar = document.querySelector('aside, div[class*="sidebar"], div[class*="nav"]');
-      if (sidebar) sidebar.scrollTop = sidebar.scrollHeight;
-
-      // Find all clickable elements
-      const elements = Array.from(document.querySelectorAll('a, button, span, div'));
-      const lootBtn = elements.find(el => {
+      // Find all clickable links/elements on the entire page
+      const allEls = Array.from(document.querySelectorAll('a, button, span, div, p'));
+      
+      // Look specifically for the Loot menu item
+      const lootBtn = allEls.find(el => {
         const text = el.textContent ? el.textContent.trim().toLowerCase() : '';
         return text === 'loot' && el.children.length === 0;
-      }) || elements.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'loot');
+      }) || allEls.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'loot');
 
       if (lootBtn) {
+        lootBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
         lootBtn.click();
+        
+        // Also attempt parent click if wrapper handles onClick
+        if (lootBtn.parentElement) lootBtn.parentElement.click();
         return true;
       }
       return false;
     });
 
     if (!lootClicked) {
-      console.log('⚠️ First attempt to click Loot missed, trying alternative selector...');
+      console.log('⚠️ Could not find Loot text, trying href selector...');
       await page.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('a[href*="loot"], a[href*="tracking"]'));
-        if (links.length > 0) links[0].click();
+        const lootLink = document.querySelector('a[href*="loot"]');
+        if (lootLink) {
+          lootLink.scrollIntoView({ behavior: 'instant', block: 'center' });
+          lootLink.click();
+        }
       });
     }
 
@@ -182,7 +187,10 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     await page.evaluate(() => {
       const elements = Array.from(document.querySelectorAll('a, button, div, span'));
       const teamBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'team');
-      if (teamBtn) teamBtn.click();
+      if (teamBtn) {
+        teamBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+        teamBtn.click();
+      }
     });
 
     await new Promise(r => setTimeout(r, 2000));
@@ -192,7 +200,10 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     await page.evaluate(() => {
       const elements = Array.from(document.querySelectorAll('a, button, div, span'));
       const dropBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase().includes('droptimizer'));
-      if (dropBtn) dropBtn.click();
+      if (dropBtn) {
+        dropBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+        dropBtn.click();
+      }
     });
 
     console.log('⏳ Waiting for Droptimizer table to load...');
