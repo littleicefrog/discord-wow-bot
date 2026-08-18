@@ -211,14 +211,14 @@ async function processRaidbotsTask(message, raidbotsUrl) {
   } catch (error) {
     console.error('❌ Detailed Error Log:', error.message || error);
     
-    // Take screenshot on error and send to Discord
+    // Take screenshot on error and send to Discord in English
     if (page) {
       try {
         const screenshotPath = 'error.png';
         await page.screenshot({ path: screenshotPath, fullPage: true });
         const attachment = new AttachmentBuilder(screenshotPath);
         await message.channel.send({ 
-          content: `❌ **Debug Info:** Bot ရဲ့ လက်ရှိ Screen အခြေအနေ ဖြစ်ပါတယ်။ (${error.message || 'Error occurred'})`, 
+          content: `❌ **Debug Snapshot:** Current browser state attached below. (${error.message || 'Error occurred'})`, 
           files: [attachment] 
         });
         if (fs.existsSync(screenshotPath)) fs.unlinkSync(screenshotPath);
