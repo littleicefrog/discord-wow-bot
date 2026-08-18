@@ -50,7 +50,6 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    // Set User Agent to bypass bot detection
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     // Block heavy media (Images/Fonts)
@@ -114,13 +113,10 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     console.log('📍 Navigating to WoWUtils Loot Tab...');
     const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
-    
-    // Changed to domcontentloaded with 90s timeout for fast loading
     await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
-    // --- STEP 3: Robust Click for "Team" Tab ---
+    // --- STEP 3: Click "Team" Tab ---
     console.log('👆 Waiting for "Team" tab to be clickable...');
-    
     await page.waitForFunction(() => {
       const elements = Array.from(document.querySelectorAll('button, a, div, span'));
       return elements.some(e => e.textContent.trim() === 'Team');
@@ -141,6 +137,30 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     }
 
     console.log('✅ Clicked "Team" tab.');
+    await new Promise(r => setTimeout(r, 2000));
+
+    // --- STEP 3.5: Click "Droptimizers" Sub-Tab ---
+    console.log('👆 Clicking "Droptimizers" tab...');
+    await page.waitForFunction(() => {
+      const elements = Array.from(document.querySelectorAll('button, a, div, span'));
+      return elements.some(e => e.textContent.trim() === 'Droptimizers');
+    }, { timeout: 20000 });
+
+    const droptimizersClicked = await page.evaluate(() => {
+      const allElements = Array.from(document.querySelectorAll('button, a, div, span'));
+      const dropEl = allElements.find(e => e.textContent.trim() === 'Droptimizers');
+      if (dropEl) {
+        dropEl.click();
+        return true;
+      }
+      return false;
+    });
+
+    if (!droptimizersClicked) {
+      throw new Error('Droptimizers tab not found!');
+    }
+
+    console.log('✅ Clicked "Droptimizers" tab.');
     await new Promise(r => setTimeout(r, 3000));
 
     // --- STEP 4: Search Member Row & Click Upload Arrow ---
