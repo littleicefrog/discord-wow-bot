@@ -46,6 +46,10 @@ client.on('messageCreate', async (message) => {
           '--no-sandbox', 
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--disable-gpu',
+          '--no-first-run',
+          '--no-zygote',
           '--single-process'
         ]
       });
@@ -53,10 +57,10 @@ client.on('messageCreate', async (message) => {
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800 });
 
-      // Step A: Wishlist Page သို့ သွားခြင်း
+      // Step A: Wishlist Page သို့ သွားခြင်း (Network ငြိမ်အောင် အချိန်အနည်းငယ်စောင့်မည်)
       console.log('📍 Navigating to WoWUtils page...');
       const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
-      await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await page.goto(wishlistUrl, { waitUntil: 'commit', timeout: 60000 });
 
       // Step B: Session Cookie ထည့်သွင်းခြင်း
       console.log('🔑 Setting session cookie...');
@@ -69,7 +73,8 @@ client.on('messageCreate', async (message) => {
       });
 
       // Cookie အကျိုးသက်ရောက်ရန် Reload ပြုလုပ်ခြင်း
-      await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+      console.log('🔄 Reloading page to apply cookie...');
+      await page.reload({ waitUntil: 'commit', timeout: 60000 });
 
       // Step C: Cookie/Privacy Banner ပေါ်လာပါက "Accept All" ကို နှိပ်ပေးခြင်း
       try {
@@ -82,9 +87,9 @@ client.on('messageCreate', async (message) => {
         console.log("Cookie Banner မပေါ်ပါ သို့မဟုတ် ကျော်သွားပါပြီ။");
       }
 
-      // Step D: "Import droptimizer" ခလုတ်ကို နှိပ်ခြင်း (Selector စနစ်ကို DOM စစ်ဆေးနည်းဖြင့် ပြောင်းထားပါသည်)
+      // Step D: "Import droptimizer" ခလုတ်ကို နှိပ်ခြင်း
       console.log('👆 Clicking Import droptimizer button...');
-      await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15000 }).catch(() => {});
+      await new Promise(r => setTimeout(r, 3000)); // Page element တွေ အပြည့်အဝ တက်လာအောင် ခဏစောင့်မည်
       
       const imported = await page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button'));
