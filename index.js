@@ -121,9 +121,9 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     const cleanCharName = characterName.toLowerCase().trim();
     console.log(`✅ Character Name: "${cleanCharName}"`);
-    await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating to WoWUtils...`);
+    await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating directly to Droptimizers...`);
 
-    // --- STEP 2: Inject Cookies & Load Base Page ---
+    // --- STEP 2: Inject Cookies & Navigate DIRECTLY to Droptimizer URL ---
     if (!process.env.SESSION_COOKIE) {
       throw new Error("SESSION_COOKIE environment variable is missing on Render!");
     }
@@ -138,84 +138,15 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       sameSite: 'Lax'
     });
 
-    const mainGroupUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464';
-    console.log(`📍 Navigating to: ${mainGroupUrl}`);
+    // Sidebar ကို click မလုပ်တော့ဘဲ တိုက်ရိုက် Droptimizers URL သို့ သွားခြင်း
+    const droptimizerUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464/loot/droptimizers';
+    console.log(`📍 Navigating directly to: ${droptimizerUrl}`);
     
-    await page.goto(mainGroupUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+    await page.goto(droptimizerUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     await dismissCookieBanner(page);
-
-    // --- STEP 2.5: Scroll & Click TRACKING -> Loot Menu ---
-    console.log('👇 Locating "Loot" menu item under TRACKING...');
-    
-    const lootClicked = await page.evaluate(() => {
-      const allEls = Array.from(document.querySelectorAll('a, button, span, div'));
-      
-      // Find the Loot text element specifically under TRACKING
-      const lootBtn = allEls.find(el => {
-        const text = el.textContent ? el.textContent.trim().toLowerCase() : '';
-        return text === 'loot' && el.children.length === 0;
-      }) || allEls.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'loot');
-
-      if (lootBtn) {
-        lootBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-        // Click the element and its parent container to ensure accordion expands
-        lootBtn.click();
-        if (lootBtn.parentElement) lootBtn.parentElement.click();
-        return true;
-      }
-      return false;
-    });
-
-    if (!lootClicked) {
-      throw new Error("Could not find or click Loot menu in left navigation.");
-    }
-
-    console.log('⏳ Waiting for Loot sub-menu options (Team/Droptimizers) to expand...');
-    await new Promise(r => setTimeout(r, 2500));
-    await dismissCookieBanner(page);
-
-    // --- STEP 2.6: Click Team / Droptimizers ---
-    console.log('👆 Looking for "Team" or "Droptimizer" sub-menu...');
-    
-    const subMenuClicked = await page.evaluate(() => {
-      const allEls = Array.from(document.querySelectorAll('a, button, span, div'));
-      
-      // Try to click Team first
-      let target = allEls.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'team');
-      
-      // If Team is not visible, look directly for Droptimizers
-      if (!target) {
-        target = allEls.find(el => el.textContent && el.textContent.trim().toLowerCase().includes('droptimizer'));
-      }
-
-      if (target) {
-        target.scrollIntoView({ behavior: 'instant', block: 'center' });
-        target.click();
-        if (target.parentElement) target.parentElement.click();
-        return true;
-      }
-      return false;
-    });
-
-    if (!subMenuClicked) {
-      console.log('⚠️ Could not click sub-menu directly, re-clicking Loot expansion...');
-    }
-
-    await new Promise(r => setTimeout(r, 2000));
-
-    // Secondary Check for Droptimizer Tab
-    await page.evaluate(() => {
-      const allEls = Array.from(document.querySelectorAll('a, button, span, div'));
-      const dropTab = allEls.find(el => el.textContent && el.textContent.trim().toLowerCase().includes('droptimizer'));
-      if (dropTab) {
-        dropTab.scrollIntoView({ behavior: 'instant', block: 'center' });
-        dropTab.click();
-      }
-    });
 
     console.log('⏳ Waiting for Droptimizer table to load...');
     await new Promise(r => setTimeout(r, 4000));
-    await dismissCookieBanner(page);
 
     // --- STEP 3: Find Character Row & Click Upload Icon ---
     console.log(`🔍 Locating character row for "${cleanCharName}"...`);
