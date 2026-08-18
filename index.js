@@ -1,7 +1,6 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const http = require('http');
 
-// Global variables for dynamic ESM modules
 let puppeteer;
 let queue;
 
@@ -95,7 +94,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     console.log(`✅ Extracted Character Name: "${cleanCharName}"`);
     await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating to WoWUtils...`);
 
-    // --- STEP 2: Navigate to WoWUtils ---
+    // --- STEP 2: Navigate directly to WoWUtils Droptimizer Page ---
     if (!process.env.SESSION_COOKIE) {
       throw new Error("SESSION_COOKIE environment variable is missing on Render!");
     }
@@ -110,63 +109,56 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       sameSite: 'Lax'
     });
 
-    console.log('📍 Navigating to WoWUtils Loot Tab...');
-    const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
-    await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
-
-    await new Promise(r => setTimeout(r, 4000));
-
-    // --- STEP 3: Click "Team" Tab ---
-    console.log('👆 Attempting to click "Team" tab...');
-    await page.evaluate(() => {
-      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
-      const teamEl = elements.find(e => e.textContent && e.textContent.trim().toLowerCase() === 'team');
-      if (teamEl) teamEl.click();
+    console.log('📍 Navigating directly to WoWUtils Team Droptimizers Page...');
+    // Direct URL to Team Droptimizer page
+    const droptimizerDirectUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=team&subtab=droptimizers';
+    await page.goto(droptimizerDirectUrl, { waitUntil: 'networkidle2', timeout: 90000 }).catch(async () => {
+      console.log('⚠️ Networkidle2 timed out, falling back to domcontentloaded...');
+      await page.goto(droptimizerDirectUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     });
 
-    await new Promise(r => setTimeout(r, 2000));
+    console.log('⏳ Waiting 6 seconds for page JS to render character list...');
+    await new Promise(r => setTimeout(r, 6000));
 
-    // --- STEP 3.5: Click "Droptimizers" Sub-Tab ---
-    console.log('👆 Attempting to click "Droptimizers" tab...');
-    await page.evaluate(() => {
-      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
-      const dropEl = elements.find(e => e.textContent && e.textContent.trim().toLowerCase().includes('droptimizer'));
-      if (dropEl) dropEl.click();
-    });
-
-    // --- STEP 3.6: Wait for Table/Content to Load ---
-    console.log('⏳ Waiting for Droptimizers table/data to load...');
-    await new Promise(r => setTimeout(r, 5000));
-
-    // --- STEP 4: Search Member Row & Click Upload Arrow ---
+    // --- STEP 3: Search Member Row & Click Upload Arrow ---
     console.log(`🔍 Searching for Upload Icon next to member "${cleanCharName}"...`);
 
     const clickResult = await page.evaluate((targetChar) => {
-      const allElements = Array.from(document.querySelectorAll('*'));
-
-      // Find all elements containing character name
-      const matchedElements = allElements.filter(el => {
-        const text = (el.innerText || el.textContent || '').toLowerCase();
-        return text.includes(targetChar);
+      // Collect all text nodes or elements containing text
+      const allNodes = Array.from(document.querySelectorAll('*'));
+      
+      const targetElement = allNodes.find(el => {
+        return el.children.length === 0 && el.textContent.toLowerCase().trim() === targetChar;
       });
 
-      if (matchedElements.length === 0) {
-        return { success: false, reason: `Character name "${targetChar}" not found anywhere on the page` };
-      }
-
-      // Find the parent row/card container
-      for (const el of matchedElements.reverse()) {
-        const rowCandidate = el.closest('tr, div[class*="row"], div[class*="item"], div');
-        if (rowCandidate) {
-          const clickable = rowCandidate.querySelector('button, svg, a');
-          if (clickable) {
-            clickable.click();
-            return { success: true };
-          }
+      if (!targetElement) {
+        // Fallback: search by partial text
+        const partialTarget = allNodes.find(el => el.textContent.toLowerCase().includes(targetChar));
+        if (!partialTarget) {
+          return { success: false, reason: `Character "${targetChar}" not found. Page title: "${document.title}"` };
         }
       }
 
-      return { success: false, reason: 'Found character name, but no clickable upload button near it' };
+      // Find closest container/row element
+      const elementToUse = targetElement || allNodes.find(el => el.textContent.toLowerCase().includes(targetChar));
+      const row = elementToUse.closest('tr, div[class*="row"], div[class*="item"], div');
+
+      if (!row) {
+        return { success: false, reason: 'Found character name, but parent row element could not be identified' };
+      }
+
+      // Find button or SVG icon inside or next to this row
+      const uploadBtn = row.querySelector('button, svg, a');
+      if (uploadBtn) {
+        if (uploadBtn.tagName === 'SVG' && uploadBtn.parentElement) {
+          uploadBtn.parentElement.click();
+        } else {
+          uploadBtn.click();
+        }
+        return { success: true };
+      }
+
+      return { success: false, reason: 'Found character row, but no upload button inside' };
     }, cleanCharName);
 
     if (!clickResult.success) {
@@ -175,7 +167,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     console.log('✅ Clicked Upload Arrow icon successfully!');
 
-    // --- STEP 5: Enter Raidbots Link into Modal ---
+    // --- STEP 4: Enter Raidbots Link into Modal ---
     console.log('⌛ Waiting for modal input field...');
     const inputElement = await page.waitForSelector('input', { timeout: 20000 });
 
@@ -189,7 +181,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     await new Promise(r => setTimeout(r, 1000));
 
-    // --- STEP 6: Click "Fetch Report" ---
+    // --- STEP 5: Click "Fetch Report" ---
     console.log('👆 Step 1: Clicking "Fetch Report"...');
     const clickedFetch = await page.evaluate(() => {
       const buttons = Array.from(document.querySelectorAll('button'));
@@ -205,7 +197,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       await page.keyboard.press('Enter');
     }
 
-    // --- STEP 7: Wait and Click final "Import" Button ---
+    // --- STEP 6: Wait and Click final "Import" Button ---
     console.log('⏳ Waiting for "Import" button to appear on 2nd screen...');
     
     await page.waitForFunction(() => {
