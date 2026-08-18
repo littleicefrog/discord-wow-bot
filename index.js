@@ -60,6 +60,17 @@ client.on('messageCreate', async (message) => {
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800 });
 
+      // Block images, fonts, media, and analytics to speed up loading and prevent network timeouts
+      await page.setRequestInterception(true);
+      page.on('request', (req) => {
+        const resourceType = req.resourceType();
+        if (['image', 'font', 'media', 'stylesheet'].includes(resourceType)) {
+          req.abort();
+        } else {
+          req.continue();
+        }
+      });
+
       // Pre-set session cookie before visiting the page
       console.log('🔑 Pre-setting session cookie...');
       if (!process.env.SESSION_COOKIE) {
@@ -80,17 +91,17 @@ client.on('messageCreate', async (message) => {
 
       console.log('📍 Navigating to WoWUtils Loot Tab...');
       const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
-      await page.goto(wishlistUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+      await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
       console.log('👆 Waiting for Import droptimizer button...');
       
-      // Wait for the Import button to appear (Max 15 seconds)
+      // Wait for the Import button to appear (Max 20 seconds)
       let imported = false;
       try {
         await page.waitForFunction(() => {
           const btns = Array.from(document.querySelectorAll('button'));
           return btns.some(b => b.textContent.includes('Import droptimizer'));
-        }, { timeout: 15000 });
+        }, { timeout: 20000 });
 
         imported = await page.evaluate(() => {
           const buttons = Array.from(document.querySelectorAll('button'));
