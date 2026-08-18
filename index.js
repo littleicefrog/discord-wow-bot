@@ -115,16 +115,14 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
     await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
-    // --- STEP 3: Click "Team" Tab ---
-    console.log('👆 Waiting for "Team" tab to be clickable...');
-    await page.waitForFunction(() => {
-      const elements = Array.from(document.querySelectorAll('button, a, div, span'));
-      return elements.some(e => e.textContent.trim() === 'Team');
-    }, { timeout: 30000 });
+    // Wait for initial render
+    await new Promise(r => setTimeout(r, 4000));
 
+    // --- STEP 3: Flexible Click for "Team" Tab ---
+    console.log('👆 Attempting to click "Team" tab...');
     const teamClicked = await page.evaluate(() => {
-      const allElements = Array.from(document.querySelectorAll('button, a, div, span'));
-      const teamEl = allElements.find(e => e.textContent.trim() === 'Team');
+      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
+      const teamEl = elements.find(e => e.textContent && e.textContent.trim().toLowerCase() === 'team');
       if (teamEl) {
         teamEl.click();
         return true;
@@ -132,23 +130,18 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       return false;
     });
 
-    if (!teamClicked) {
-      throw new Error("Team tab not found on WoWUtils page!");
+    if (teamClicked) {
+      console.log('✅ Clicked "Team" tab.');
+      await new Promise(r => setTimeout(r, 2000));
+    } else {
+      console.log('⚠️ "Team" tab not found or already on Team page. Proceeding...');
     }
 
-    console.log('✅ Clicked "Team" tab.');
-    await new Promise(r => setTimeout(r, 2000));
-
-    // --- STEP 3.5: Click "Droptimizers" Sub-Tab ---
-    console.log('👆 Clicking "Droptimizers" tab...');
-    await page.waitForFunction(() => {
-      const elements = Array.from(document.querySelectorAll('button, a, div, span'));
-      return elements.some(e => e.textContent.trim() === 'Droptimizers');
-    }, { timeout: 20000 });
-
+    // --- STEP 3.5: Flexible Click for "Droptimizers" Sub-Tab ---
+    console.log('👆 Attempting to click "Droptimizers" tab...');
     const droptimizersClicked = await page.evaluate(() => {
-      const allElements = Array.from(document.querySelectorAll('button, a, div, span'));
-      const dropEl = allElements.find(e => e.textContent.trim() === 'Droptimizers');
+      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
+      const dropEl = elements.find(e => e.textContent && e.textContent.trim().toLowerCase().includes('droptimizer'));
       if (dropEl) {
         dropEl.click();
         return true;
@@ -156,12 +149,13 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       return false;
     });
 
-    if (!droptimizersClicked) {
-      throw new Error('Droptimizers tab not found!');
+    if (droptimizersClicked) {
+      console.log('✅ Clicked "Droptimizers" tab.');
+      await new Promise(r => setTimeout(r, 3000));
+    } else {
+      console.log('⚠️ "Droptimizers" tab not found or already open. Proceeding to search member...');
+      await new Promise(r => setTimeout(r, 2000));
     }
-
-    console.log('✅ Clicked "Droptimizers" tab.');
-    await new Promise(r => setTimeout(r, 3000));
 
     // --- STEP 4: Search Member Row & Click Upload Arrow ---
     console.log(`🔍 Searching for Upload Icon next to member "${cleanCharName}"...`);
