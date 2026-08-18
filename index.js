@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const puppeteer = require('puppeteer');
 const http = require('http');
 
-// 1. Dummy Web Server for Render Health Check / Port Scan (Free Tier)
+// 1. Dummy Web Server for Render Health Check
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -31,7 +31,6 @@ client.once('clientReady', () => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
-  // Check if the message contains a Raidbots Droptimizer link
   if (message.content.includes('raidbots.com/simbot/report/')) {
     console.log(`📩 New Raidbots link received from ${message.author.tag}`);
     const raidbotsUrl = message.content.trim();
@@ -60,18 +59,18 @@ client.on('messageCreate', async (message) => {
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800 });
 
-      // Block images, fonts, media, and stylesheets to speed up loading
+      // Block only heavy media (Images/Fonts) - Keep Stylesheets for layout rendering
       await page.setRequestInterception(true);
       page.on('request', (req) => {
         const resourceType = req.resourceType();
-        if (['image', 'font', 'media', 'stylesheet'].includes(resourceType)) {
+        if (['image', 'font', 'media'].includes(resourceType)) {
           req.abort();
         } else {
           req.continue();
         }
       });
 
-      // Pre-set session cookie before visiting the page
+      // Pre-set session cookie
       console.log('🔑 Pre-setting session cookie...');
       if (!process.env.SESSION_COOKIE) {
         throw new Error("SESSION_COOKIE environment variable is missing on Render!");
@@ -95,13 +94,13 @@ client.on('messageCreate', async (message) => {
 
       console.log('👆 Waiting for Import droptimizer button...');
       
-      // Wait for the Import button to appear (Max 20 seconds)
+      // Extended wait timeout to 30 seconds
       let imported = false;
       try {
         await page.waitForFunction(() => {
           const btns = Array.from(document.querySelectorAll('button'));
           return btns.some(b => b.textContent.includes('Import droptimizer'));
-        }, { timeout: 20000 });
+        }, { timeout: 30000 });
 
         imported = await page.evaluate(() => {
           const buttons = Array.from(document.querySelectorAll('button'));
@@ -117,22 +116,18 @@ client.on('messageCreate', async (message) => {
       }
 
       if (!imported) {
-        throw new Error("Import droptimizer button not found. The cookie may be expired or invalid.");
+        throw new Error("Import droptimizer button not found. Please refresh your SESSION_COOKIE in Render.");
       }
 
-      // Wait a short delay for the modal/popup to open properly
       await new Promise(r => setTimeout(r, 2000));
 
       console.log('✍️ Typing Raidbots URL...');
-      
-      // Dynamic Input Detection (Finds text/url input field inside the open modal)
       const inputFound = await page.evaluate((url) => {
         const inputs = Array.from(document.querySelectorAll('input'));
         const targetInput = inputs.find(i => 
           i.type === 'text' || 
           i.type === 'url' || 
-          (i.placeholder && i.placeholder.toLowerCase().includes('raidbots')) ||
-          i.isVisible
+          (i.placeholder && i.placeholder.toLowerCase().includes('raidbots'))
         ) || inputs[0];
 
         if (targetInput) {
@@ -175,7 +170,6 @@ client.on('messageCreate', async (message) => {
         await browser.close().catch(() => {});
       }
 
-      // Auto delete original message and reply message after 5 seconds
       setTimeout(async () => {
         if (message.deletable) await message.delete().catch(() => {});
         if (replyMsg.deletable) await replyMsg.delete().catch(() => {});
@@ -184,7 +178,7 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-process.env.SESSION_COOKIE && process.on('unhandledRejection', (error) => {
+process.on('unhandledRejection', (error) => {
   console.error('❌ Unhandled Error:', error);
 });
 
