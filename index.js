@@ -65,21 +65,16 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     console.log(`🔎 Reading character name from Raidbots Link: ${raidbotsUrl}`);
     await page.goto(raidbotsUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-    // Wait for the main title/character name to render on Raidbots page
     await page.waitForSelector('h1, header, .character-name', { timeout: 15000 }).catch(() => {});
 
     const characterName = await page.evaluate(() => {
-      // Extract character name from title or page text
-      const pageText = document.body.innerText;
       const titleText = document.title;
-      
-      // Raidbots page title format usually: "Droptimizer - CharacterName - Realm" or similar
+      // Extract name from title e.g. "Droptimizer - Blademail - US-Illidan"
       const titleMatch = titleText.match(/-\s*([A-Za-z0-9]+)\s*-/);
       if (titleMatch && titleMatch[1]) {
         return titleMatch[1].trim();
       }
 
-      // Fallback: Check h1 or heading tags
       const headings = Array.from(document.querySelectorAll('h1, h2, header'));
       for (const h of headings) {
         if (h.textContent && h.textContent.trim().length > 0) {
@@ -136,36 +131,62 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       throw new Error("Team tab not found!");
     }
 
-    await new Promise(r => setTimeout(r, 1500));
+    // Wait 3 seconds for Team table to render fully
+    await new Promise(r => setTimeout(r, 3000));
 
-    // --- STEP 4: Find Member Row matching Character Name & Click Upload Icon ---
+    // --- STEP 4: Advanced Search for Member Row & Click Upload Arrow ---
     console.log(`🔍 Searching for Member row matching "${cleanCharName}"...`);
-    await page.waitForSelector('tr, div', { timeout: 15000 });
 
-    const uploadClicked = await page.evaluate((targetChar) => {
-      const allRows = Array.from(document.querySelectorAll('tr, div'));
+    const clickResult = await page.evaluate((targetChar) => {
+      // Find all rows or containers that might hold member info
+      const containers = Array.from(document.querySelectorAll('tr, div'));
       
-      // Find row containing the character name
-      const matchedRow = allRows.find(row => {
-        const text = row.textContent.toLowerCase();
-        return text.includes(targetChar);
+      // Filter containers that explicitly contain the character name
+      const matchedContainers = containers.filter(el => {
+        const text = el.innerText || el.textContent;
+        return text && text.toLowerCase().includes(targetChar);
       });
 
-      if (matchedRow) {
-        // Find upload icon/button inside this row
-        const parentRow = matchedRow.closest('tr') || matchedRow;
-        const uploadBtn = parentRow.querySelector('button, svg, a');
-        if (uploadBtn) {
-          uploadBtn.click();
-          return true;
+      if (matchedContainers.length === 0) {
+        return { success: false, reason: 'Name not found in page text' };
+      }
+
+      // Pick the most specific (deepest) container with the name
+      let targetRow = matchedContainers[matchedContainers.length - 1];
+      
+      // Traverse up to find a proper row-like element if needed
+      while (targetRow && !targetRow.querySelector('button, svg') && targetRow.parentElement) {
+        targetRow = targetRow.parentElement;
+      }
+
+      // Look for clickable button, svg, or icon inside this row
+      const clickableElements = Array.from(targetRow.querySelectorAll('button, svg, a, span'));
+      
+      // Find the button/icon that acts as upload arrow
+      for (const el of clickableElements) {
+        const isButton = el.tagName === 'BUTTON' || el.tagName === 'SVG' || el.getAttribute('role') === 'button';
+        if (isButton) {
+          el.click();
+          return { success: true };
         }
       }
-      return false;
+
+      // If no explicit button, click the parent of the first SVG found
+      const svg = targetRow.querySelector('svg');
+      if (svg) {
+        if (svg.parentElement) svg.parentElement.click();
+        else svg.click();
+        return { success: true };
+      }
+
+      return { success: false, reason: 'Upload button/icon not clickable' };
     }, cleanCharName);
 
-    if (!uploadClicked) {
-      throw new Error(`Could not find character "${characterName}" or upload icon in WoWUtils Team table!`);
+    if (!clickResult.success) {
+      throw new Error(`Could not click upload button for "${characterName}". (${clickResult.reason})`);
     }
+
+    console.log('✅ Clicked upload arrow successfully!');
 
     // --- STEP 5: Enter Raidbots Link into Modal ---
     console.log('⌛ Waiting for modal input field...');
