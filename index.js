@@ -110,44 +110,31 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     });
 
     console.log('📍 Navigating directly to WoWUtils Team Droptimizers Page...');
-    // Direct URL to Team Droptimizer page
     const droptimizerDirectUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=team&subtab=droptimizers';
-    await page.goto(droptimizerDirectUrl, { waitUntil: 'networkidle2', timeout: 90000 }).catch(async () => {
-      console.log('⚠️ Networkidle2 timed out, falling back to domcontentloaded...');
-      await page.goto(droptimizerDirectUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    });
+    await page.goto(droptimizerDirectUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
-    console.log('⏳ Waiting 6 seconds for page JS to render character list...');
-    await new Promise(r => setTimeout(r, 6000));
+    console.log('⏳ Waiting for page elements to load...');
+    await new Promise(r => setTimeout(r, 5000));
 
     // --- STEP 3: Search Member Row & Click Upload Arrow ---
     console.log(`🔍 Searching for Upload Icon next to member "${cleanCharName}"...`);
 
     const clickResult = await page.evaluate((targetChar) => {
-      // Collect all text nodes or elements containing text
       const allNodes = Array.from(document.querySelectorAll('*'));
       
       const targetElement = allNodes.find(el => {
         return el.children.length === 0 && el.textContent.toLowerCase().trim() === targetChar;
-      });
+      }) || allNodes.find(el => el.textContent.toLowerCase().includes(targetChar));
 
       if (!targetElement) {
-        // Fallback: search by partial text
-        const partialTarget = allNodes.find(el => el.textContent.toLowerCase().includes(targetChar));
-        if (!partialTarget) {
-          return { success: false, reason: `Character "${targetChar}" not found. Page title: "${document.title}"` };
-        }
+        return { success: false, reason: `Character "${targetChar}" not found on page.` };
       }
 
-      // Find closest container/row element
-      const elementToUse = targetElement || allNodes.find(el => el.textContent.toLowerCase().includes(targetChar));
-      const row = elementToUse.closest('tr, div[class*="row"], div[class*="item"], div');
-
+      const row = targetElement.closest('tr, div[class*="row"], div[class*="item"], div');
       if (!row) {
-        return { success: false, reason: 'Found character name, but parent row element could not be identified' };
+        return { success: false, reason: 'Parent row container not found.' };
       }
 
-      // Find button or SVG icon inside or next to this row
       const uploadBtn = row.querySelector('button, svg, a');
       if (uploadBtn) {
         if (uploadBtn.tagName === 'SVG' && uploadBtn.parentElement) {
@@ -158,7 +145,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
         return { success: true };
       }
 
-      return { success: false, reason: 'Found character row, but no upload button inside' };
+      return { success: false, reason: 'Upload button not found inside character row.' };
     }, cleanCharName);
 
     if (!clickResult.success) {
@@ -183,27 +170,23 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     // --- STEP 5: Click "Fetch Report" ---
     console.log('👆 Step 1: Clicking "Fetch Report"...');
-    const clickedFetch = await page.evaluate(() => {
+    await page.evaluate(() => {
       const buttons = Array.from(document.querySelectorAll('button'));
       const fetchBtn = buttons.find(b => b.textContent.includes('Fetch Report'));
-      if (fetchBtn) {
-        fetchBtn.click();
-        return true;
-      }
-      return false;
+      if (fetchBtn) fetchBtn.click();
     });
 
-    if (!clickedFetch) {
-      await page.keyboard.press('Enter');
-    }
+    // Fallback: Keyboard Enter
+    await page.keyboard.press('Enter');
 
     // --- STEP 6: Wait and Click final "Import" Button ---
-    console.log('⏳ Waiting for "Import" button to appear on 2nd screen...');
+    console.log('⏳ Waiting for "Import" button to appear on 2nd screen (Timeout: 60s)...');
     
+    // Increased timeout to 60000ms (60 seconds)
     await page.waitForFunction(() => {
       const buttons = Array.from(document.querySelectorAll('button'));
       return buttons.some(b => b.textContent.trim() === 'Import');
-    }, { timeout: 25000 });
+    }, { timeout: 60000 });
 
     console.log('👆 Step 2: Clicking final "Import" button...');
     const clickedImport = await page.evaluate(() => {
