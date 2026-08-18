@@ -134,59 +134,51 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     // Wait 3 seconds for Team table to render fully
     await new Promise(r => setTimeout(r, 3000));
 
-    // --- STEP 4: Advanced Search for Member Row & Click Upload Arrow ---
-    console.log(`🔍 Searching for Member row matching "${cleanCharName}"...`);
+    // --- STEP 4: Target the EXACT Upload Arrow Icon for the Character ---
+    console.log(`🔍 Searching for Upload Icon next to member "${cleanCharName}"...`);
 
     const clickResult = await page.evaluate((targetChar) => {
-      // Find all rows or containers that might hold member info
-      const containers = Array.from(document.querySelectorAll('tr, div'));
-      
-      // Filter containers that explicitly contain the character name
-      const matchedContainers = containers.filter(el => {
-        const text = el.innerText || el.textContent;
-        return text && text.toLowerCase().includes(targetChar);
+      // Find all rows or parent divs in the table
+      const allRows = Array.from(document.querySelectorAll('tr, div'));
+
+      // Filter rows containing the target character name
+      const matchedRow = allRows.reverse().find(el => {
+        const text = el.innerText || el.textContent || '';
+        return text.toLowerCase().includes(targetChar) && el.querySelector('button, svg');
       });
 
-      if (matchedContainers.length === 0) {
-        return { success: false, reason: 'Name not found in page text' };
+      if (!matchedRow) {
+        return { success: false, reason: `Character name "${targetChar}" not found in Team table` };
       }
 
-      // Pick the most specific (deepest) container with the name
-      let targetRow = matchedContainers[matchedContainers.length - 1];
-      
-      // Traverse up to find a proper row-like element if needed
-      while (targetRow && !targetRow.querySelector('button, svg') && targetRow.parentElement) {
-        targetRow = targetRow.parentElement;
-      }
+      // Look specifically for buttons or elements containing SVG icons (Upload Icon)
+      const buttons = Array.from(matchedRow.querySelectorAll('button, svg, a'));
 
-      // Look for clickable button, svg, or icon inside this row
-      const clickableElements = Array.from(targetRow.querySelectorAll('button, svg, a, span'));
-      
-      // Find the button/icon that acts as upload arrow
-      for (const el of clickableElements) {
-        const isButton = el.tagName === 'BUTTON' || el.tagName === 'SVG' || el.getAttribute('role') === 'button';
-        if (isButton) {
-          el.click();
-          return { success: true };
+      // Find button that isn't a delete/trash icon (or pick the upload button specifically)
+      let uploadBtn = buttons.find(btn => {
+        const html = btn.outerHTML || '';
+        // Skip trash / delete buttons
+        if (html.includes('trash') || html.includes('delete')) return false;
+        return true;
+      });
+
+      if (uploadBtn) {
+        if (uploadBtn.tagName === 'SVG' && uploadBtn.parentElement) {
+          uploadBtn.parentElement.click();
+        } else {
+          uploadBtn.click();
         }
-      }
-
-      // If no explicit button, click the parent of the first SVG found
-      const svg = targetRow.querySelector('svg');
-      if (svg) {
-        if (svg.parentElement) svg.parentElement.click();
-        else svg.click();
         return { success: true };
       }
 
-      return { success: false, reason: 'Upload button/icon not clickable' };
+      return { success: false, reason: 'Upload button/icon not found inside character row' };
     }, cleanCharName);
 
     if (!clickResult.success) {
       throw new Error(`Could not click upload button for "${characterName}". (${clickResult.reason})`);
     }
 
-    console.log('✅ Clicked upload arrow successfully!');
+    console.log('✅ Clicked Upload Arrow icon successfully!');
 
     // --- STEP 5: Enter Raidbots Link into Modal ---
     console.log('⌛ Waiting for modal input field...');
