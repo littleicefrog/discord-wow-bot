@@ -144,7 +144,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     await page.goto(mainGroupUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     await dismissCookieBanner(page);
 
-    // --- STEP 2.5: Scroll to "Loot" & Click to expand Accordion ---
+    // --- STEP 2.5: Expand Loot Menu ---
     console.log('👇 Locating "Loot" in sidebar...');
     
     const lootExpanded = await page.evaluate(() => {
@@ -153,8 +153,6 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
       if (lootBtn) {
         lootBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-        
-        // Dispatch real click events to trigger Next.js UI reaction
         const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
         lootBtn.dispatchEvent(clickEvent);
         if (lootBtn.parentElement) lootBtn.parentElement.dispatchEvent(clickEvent);
@@ -170,11 +168,10 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     console.log('⏳ Waiting for Loot accordion to expand...');
     await new Promise(r => setTimeout(r, 2000));
 
-    // --- STEP 2.6: Click Droptimizers / Team sub-item ---
+    // --- STEP 2.6: Click Sub-item ---
     console.log('👆 Clicking Droptimizer / Team sub-item...');
     await page.evaluate(() => {
       const els = Array.from(document.querySelectorAll('a, button, span, div'));
-      // Find visible sub-options after Loot expands
       const subItem = els.find(el => {
         const txt = el.textContent ? el.textContent.trim().toLowerCase() : '';
         return txt.includes('droptimizer') || txt === 'team' || txt === 'gear';
@@ -191,7 +188,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     await new Promise(r => setTimeout(r, 4000));
     await dismissCookieBanner(page);
 
-    // --- STEP 3: Find Character Row & Click Upload Icon ---
+    // --- STEP 3: Find Character Row & Safe Click Upload Icon ---
     console.log(`🔍 Locating character row for "${cleanCharName}"...`);
 
     const clickResult = await page.evaluate((targetChar) => {
@@ -205,17 +202,30 @@ async function processRaidbotsTask(message, raidbotsUrl) {
         return { success: false, reason: `Character "${targetChar}" not found on page.` };
       }
 
-      const row = nameEl.closest('tr, div[class*="row"], div[class*="item"], li');
+      // Find character container row
+      const row = nameEl.closest('tr, div[class*="row"], div[class*="item"], div[class*="Character"], li');
       if (!row) {
         return { success: false, reason: 'Parent row container not found.' };
       }
 
-      const uploadBtn = row.querySelector('button, svg, a[aria-label*="upload"]');
-      if (uploadBtn) {
-        if (uploadBtn.tagName === 'SVG' && uploadBtn.parentElement) {
-          uploadBtn.parentElement.click();
-        } else {
-          uploadBtn.click();
+      // Safe button finder with event dispatching
+      const buttons = Array.from(row.querySelectorAll('button, a, svg'));
+      let uploadTarget = buttons.find(b => {
+        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+        const title = (b.getAttribute('title') || '').toLowerCase();
+        return aria.includes('upload') || aria.includes('import') || title.includes('upload') || title.includes('import');
+      });
+
+      if (!uploadTarget) {
+        // Fallback to interactive clickable element inside row
+        uploadTarget = buttons.find(b => b.tagName === 'BUTTON' || b.tagName === 'A') || row.querySelector('svg')?.parentElement;
+      }
+
+      if (uploadTarget) {
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        uploadTarget.dispatchEvent(clickEvent);
+        if (typeof uploadTarget.click === 'function') {
+          uploadTarget.click();
         }
         return { success: true };
       }
