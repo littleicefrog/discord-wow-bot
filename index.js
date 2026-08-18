@@ -50,6 +50,9 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
+    // Set User Agent to bypass bot detection
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
     // Block heavy media (Images/Fonts)
     await page.setRequestInterception(true);
     page.on('request', (req) => {
@@ -111,28 +114,30 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     console.log('📍 Navigating to WoWUtils Loot Tab...');
     const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
-    await page.goto(wishlistUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+    
+    // Changed to domcontentloaded with 90s timeout for fast loading
+    await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
     // --- STEP 3: Robust Click for "Team" Tab ---
     console.log('👆 Waiting for "Team" tab to be clickable...');
     
+    await page.waitForFunction(() => {
+      const elements = Array.from(document.querySelectorAll('button, a, div, span'));
+      return elements.some(e => e.textContent.trim() === 'Team');
+    }, { timeout: 30000 });
+
     const teamClicked = await page.evaluate(() => {
-      const allElements = Array.from(document.querySelectorAll('*'));
-      const teamEl = allElements.find(e => e.children.length === 0 && e.textContent.trim() === 'Team');
+      const allElements = Array.from(document.querySelectorAll('button, a, div, span'));
+      const teamEl = allElements.find(e => e.textContent.trim() === 'Team');
       if (teamEl) {
         teamEl.click();
-        if (teamEl.parentElement) teamEl.parentElement.click();
         return true;
       }
       return false;
     });
 
     if (!teamClicked) {
-      console.log('⚠️ Warning: Direct click on Team tab failed, retrying selector...');
-      await page.waitForXPath("//*[text()='Team']", { timeout: 15000 });
-      const [teamTab] = await page.$x("//*[text()='Team']");
-      if (teamTab) await teamTab.click();
-      else throw new Error("Team tab not found on WoWUtils page!");
+      throw new Error("Team tab not found on WoWUtils page!");
     }
 
     console.log('✅ Clicked "Team" tab.');
@@ -144,7 +149,6 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     const clickResult = await page.evaluate((targetChar) => {
       const allRows = Array.from(document.querySelectorAll('tr, div'));
 
-      // Look for the specific row with character name
       const matchedRow = allRows.reverse().find(el => {
         const text = el.innerText || el.textContent || '';
         return text.toLowerCase().includes(targetChar) && el.querySelector('button, svg');
