@@ -34,7 +34,7 @@ async function dismissCookieBanner(page) {
       });
       if (acceptBtn) acceptBtn.click();
 
-      // Remove overlays blocking UI
+      // Force remove overlay elements
       const overlays = Array.from(document.querySelectorAll('div, section')).filter(el => {
         const txt = (el.textContent || '').toLowerCase();
         return txt.includes('we value your privacy') || txt.includes('cookie policy');
@@ -121,9 +121,9 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     const cleanCharName = characterName.toLowerCase().trim();
     console.log(`✅ Character Name: "${cleanCharName}"`);
-    await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating directly to Droptimizers...`);
+    await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating to WoWUtils...`);
 
-    // --- STEP 2: Inject Cookies & Navigate Directly to Droptimizers URL ---
+    // --- STEP 2: Inject Cookies & Load Base Page ---
     if (!process.env.SESSION_COOKIE) {
       throw new Error("SESSION_COOKIE environment variable is missing on Render!");
     }
@@ -138,30 +138,65 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       sameSite: 'Lax'
     });
 
-    // Go directly to the Droptimizers view URL under NENM group
-    const droptimizerUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=team&subtab=droptimizers';
-    console.log(`📍 Navigating directly to: ${droptimizerUrl}`);
+    const mainGroupUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464';
+    console.log(`📍 Navigating to: ${mainGroupUrl}`);
     
-    await page.goto(droptimizerUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await new Promise(r => setTimeout(r, 4000));
+    await page.goto(mainGroupUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     await dismissCookieBanner(page);
 
-    // If still on overview tab, attempt explicit tab switch in DOM
+    // --- STEP 2.5: Scroll Down Sidebar & Click TRACKING -> Loot ---
+    console.log('👇 Scrolling Left Sidebar & Clicking "Loot"...');
+    
+    const lootClicked = await page.evaluate(() => {
+      // Find left sidebar element and scroll down
+      const sidebar = document.querySelector('aside, div[class*="sidebar"], div[class*="nav"]');
+      if (sidebar) sidebar.scrollTop = sidebar.scrollHeight;
+
+      // Find all clickable elements
+      const elements = Array.from(document.querySelectorAll('a, button, span, div'));
+      const lootBtn = elements.find(el => {
+        const text = el.textContent ? el.textContent.trim().toLowerCase() : '';
+        return text === 'loot' && el.children.length === 0;
+      }) || elements.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'loot');
+
+      if (lootBtn) {
+        lootBtn.click();
+        return true;
+      }
+      return false;
+    });
+
+    if (!lootClicked) {
+      console.log('⚠️ First attempt to click Loot missed, trying alternative selector...');
+      await page.evaluate(() => {
+        const links = Array.from(document.querySelectorAll('a[href*="loot"], a[href*="tracking"]'));
+        if (links.length > 0) links[0].click();
+      });
+    }
+
+    await new Promise(r => setTimeout(r, 3000));
+    await dismissCookieBanner(page);
+
+    // Click "Team"
+    console.log('👆 Clicking "Team"...');
     await page.evaluate(() => {
-      const allBtns = Array.from(document.querySelectorAll('button, a, div'));
-      const teamTab = allBtns.find(b => b.textContent && b.textContent.trim().toLowerCase() === 'team');
-      if (teamTab) teamTab.click();
+      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
+      const teamBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'team');
+      if (teamBtn) teamBtn.click();
     });
 
     await new Promise(r => setTimeout(r, 2000));
 
+    // Click "Droptimizer"
+    console.log('👆 Clicking "Droptimizer"...');
     await page.evaluate(() => {
-      const allBtns = Array.from(document.querySelectorAll('button, a, div'));
-      const dropTab = allBtns.find(b => b.textContent && b.textContent.trim().toLowerCase().includes('droptimizer'));
-      if (dropTab) dropTab.click();
+      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
+      const dropBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase().includes('droptimizer'));
+      if (dropBtn) dropBtn.click();
     });
 
-    await new Promise(r => setTimeout(r, 3000));
+    console.log('⏳ Waiting for Droptimizer table to load...');
+    await new Promise(r => setTimeout(r, 4000));
     await dismissCookieBanner(page);
 
     // --- STEP 3: Find Character Row & Click Upload Icon ---
