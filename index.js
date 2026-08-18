@@ -118,27 +118,30 @@ client.on('messageCreate', async (message) => {
         throw new Error("Import droptimizer button not found. Please refresh your SESSION_COOKIE in Render.");
       }
 
-      console.log('⌛ Waiting for modal overlay to open...');
-      await new Promise(r => setTimeout(r, 2000));
+      console.log('⌛ Waiting for modal input field to render...');
+      // Wait up to 15s specifically for input field to appear in DOM
+      await page.waitForSelector('input', { timeout: 15000 });
 
       console.log('✍️ Locating and filling Raidbots URL...');
-      // Flexible Selector Detection inside DOM
-      const inputSelector = await page.evaluate(() => {
-        const allInputs = Array.from(document.querySelectorAll('input, textarea'));
-        if (allInputs.length > 0) {
-          const visibleInput = allInputs.find(i => i.offsetWidth > 0 && i.offsetHeight > 0) || allInputs[0];
-          visibleInput.focus();
-          return true;
+      await page.evaluate((url) => {
+        const inputs = Array.from(document.querySelectorAll('input'));
+        const targetInput = inputs.find(i => i.offsetWidth > 0 || i.offsetHeight > 0) || inputs[0];
+        if (targetInput) {
+          targetInput.focus();
+          targetInput.value = url;
+          targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+          targetInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
-        return false;
-      });
+      }, raidbotsUrl);
 
-      if (!inputSelector) {
-        throw new Error("Could not find any input field in the modal.");
-      }
-
-      // Type the link into the focused element directly
+      // Backup keyboard type to ensure inputs are captured by React
+      await page.focus('input');
+      await page.keyboard.down('Control');
+      await page.keyboard.press('A');
+      await page.keyboard.up('Control');
+      await page.keyboard.press('Backspace');
       await page.keyboard.type(raidbotsUrl, { delay: 10 });
+
       await new Promise(r => setTimeout(r, 1000));
 
       console.log('👆 Clicking Fetch Report button...');
