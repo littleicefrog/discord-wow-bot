@@ -134,14 +134,12 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     // Wait 3 seconds for Team table to render fully
     await new Promise(r => setTimeout(r, 3000));
 
-    // --- STEP 4: Target the EXACT Upload Arrow Icon for the Character ---
+    // --- STEP 4: Target the Upload Arrow Icon for the Character ---
     console.log(`🔍 Searching for Upload Icon next to member "${cleanCharName}"...`);
 
     const clickResult = await page.evaluate((targetChar) => {
-      // Find all rows or parent divs in the table
       const allRows = Array.from(document.querySelectorAll('tr, div'));
 
-      // Filter rows containing the target character name
       const matchedRow = allRows.reverse().find(el => {
         const text = el.innerText || el.textContent || '';
         return text.toLowerCase().includes(targetChar) && el.querySelector('button, svg');
@@ -151,13 +149,10 @@ async function processRaidbotsTask(message, raidbotsUrl) {
         return { success: false, reason: `Character name "${targetChar}" not found in Team table` };
       }
 
-      // Look specifically for buttons or elements containing SVG icons (Upload Icon)
       const buttons = Array.from(matchedRow.querySelectorAll('button, svg, a'));
 
-      // Find button that isn't a delete/trash icon (or pick the upload button specifically)
       let uploadBtn = buttons.find(btn => {
         const html = btn.outerHTML || '';
-        // Skip trash / delete buttons
         if (html.includes('trash') || html.includes('delete')) return false;
         return true;
       });
@@ -194,16 +189,11 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     await new Promise(r => setTimeout(r, 1000));
 
-    // --- STEP 6: Submit / Fetch Report ---
-    console.log('👆 Clicking Fetch Report / Import button...');
+    // --- STEP 6: Click "Fetch Report" ---
+    console.log('👆 Step 1: Clicking "Fetch Report"...');
     const clickedFetch = await page.evaluate(() => {
       const buttons = Array.from(document.querySelectorAll('button'));
-      const fetchBtn = buttons.find(b => 
-        b.textContent.includes('Fetch Report') || 
-        b.textContent.includes('Import') ||
-        b.textContent.includes('Submit') ||
-        b.textContent.includes('Upload')
-      );
+      const fetchBtn = buttons.find(b => b.textContent.includes('Fetch Report'));
       if (fetchBtn) {
         fetchBtn.click();
         return true;
@@ -213,6 +203,30 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     if (!clickedFetch) {
       await page.keyboard.press('Enter');
+    }
+
+    // --- STEP 7: Wait and Click final "Import" Button ---
+    console.log('⏳ Waiting for "Import" button to appear on 2nd screen...');
+    
+    // Wait for the final Import button to render
+    await page.waitForFunction(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      return buttons.some(b => b.textContent.trim() === 'Import');
+    }, { timeout: 20000 });
+
+    console.log('👆 Step 2: Clicking final "Import" button...');
+    const clickedImport = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const importBtn = buttons.find(b => b.textContent.trim() === 'Import');
+      if (importBtn) {
+        importBtn.click();
+        return true;
+      }
+      return false;
+    });
+
+    if (!clickedImport) {
+      throw new Error('Failed to click final "Import" button!');
     }
 
     await new Promise(r => setTimeout(r, 5000));
