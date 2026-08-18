@@ -113,7 +113,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     console.log(`✅ Extracted Character Name: "${cleanCharName}"`);
     await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating to WoWUtils...`);
 
-    // --- STEP 2: Navigate with Cookies ---
+    // --- STEP 2: Navigate with Session Cookie ---
     if (!process.env.SESSION_COOKIE) {
       throw new Error("SESSION_COOKIE environment variable is missing on Render!");
     }
@@ -128,61 +128,44 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       sameSite: 'Lax'
     });
 
-    console.log('📍 Navigating to WoWUtils Group Main Page...');
+    console.log('📍 Navigating to WoWUtils Group Hub Page...');
     await page.goto('https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464', { waitUntil: 'domcontentloaded', timeout: 90000 });
 
     await new Promise(r => setTimeout(r, 4000));
     await dismissCookieBanner(page);
 
-    // --- STEP 2.5: Ensure Group Selection if No Group ---
-    console.log('👆 Checking active group...');
-    await page.evaluate(() => {
-      const groupDropdown = Array.from(document.querySelectorAll('*')).find(el => el.textContent && el.textContent.trim() === 'No Group');
-      if (groupDropdown) groupDropdown.click();
-    });
-
-    await new Promise(r => setTimeout(r, 1000));
-
-    await page.evaluate(() => {
-      const groupOption = Array.from(document.querySelectorAll('*')).find(el => el.textContent && el.textContent.includes('NENM'));
-      if (groupOption) groupOption.click();
-    });
-
-    await new Promise(r => setTimeout(r, 2000));
-    await dismissCookieBanner(page);
-
-    // --- STEP 2.6: Navigation Sequence: Loot -> Team -> Droptimizers ---
-    console.log('👆 Step A: Clicking "Loot" in Left Menu...');
+    // --- STEP 2.5: Navigation Sequence: TRACKING > Loot > Team > Droptimizers ---
+    console.log('👆 Step A: Clicking "Loot" in TRACKING Section...');
     await page.evaluate(() => {
       const elements = Array.from(document.querySelectorAll('a, button, div, span'));
-      const lootBtn = elements.find(el => el.textContent && el.textContent.trim() === 'Loot');
+      const lootBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'loot');
       if (lootBtn) lootBtn.click();
     });
 
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 2500));
     await dismissCookieBanner(page);
 
-    console.log('👆 Step B: Clicking "Team" tab...');
+    console.log('👆 Step B: Clicking "Team"...');
     await page.evaluate(() => {
       const elements = Array.from(document.querySelectorAll('a, button, div, span'));
-      const teamBtn = elements.find(el => el.textContent && el.textContent.trim() === 'Team');
+      const teamBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase() === 'team');
       if (teamBtn) teamBtn.click();
     });
 
     await new Promise(r => setTimeout(r, 2000));
 
-    console.log('👆 Step C: Clicking "Droptimizer" / "Droptimizers" subtab...');
+    console.log('👆 Step C: Clicking "Droptimizer" or "Droptimizers"...');
     await page.evaluate(() => {
       const elements = Array.from(document.querySelectorAll('a, button, div, span'));
       const dropBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase().includes('droptimizer'));
       if (dropBtn) dropBtn.click();
     });
 
-    console.log('⏳ Waiting 5 seconds for Droptimizer table to load...');
+    console.log('⏳ Waiting for Droptimizer table to load...');
     await new Promise(r => setTimeout(r, 5000));
     await dismissCookieBanner(page);
 
-    // --- STEP 3: Search Member Row & Click Upload Icon ---
+    // --- STEP 3: Search Character Row & Click Upload Icon ---
     console.log(`🔍 Locating character row for "${cleanCharName}" and finding Upload button...`);
 
     const clickResult = await page.evaluate((targetChar) => {
