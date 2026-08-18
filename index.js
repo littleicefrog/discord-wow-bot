@@ -60,7 +60,7 @@ client.on('messageCreate', async (message) => {
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800 });
 
-      // Block images, fonts, media, and analytics to speed up loading and prevent network timeouts
+      // Block images, fonts, media, and stylesheets to speed up loading
       await page.setRequestInterception(true);
       page.on('request', (req) => {
         const resourceType = req.resourceType();
@@ -120,15 +120,44 @@ client.on('messageCreate', async (message) => {
         throw new Error("Import droptimizer button not found. The cookie may be expired or invalid.");
       }
 
+      // Wait a short delay for the modal/popup to open properly
+      await new Promise(r => setTimeout(r, 2000));
+
       console.log('✍️ Typing Raidbots URL...');
-      const linkInputSelector = 'input'; 
-      await page.waitForSelector(linkInputSelector, { timeout: 10000 });
-      await page.type(linkInputSelector, raidbotsUrl);
+      
+      // Dynamic Input Detection (Finds text/url input field inside the open modal)
+      const inputFound = await page.evaluate((url) => {
+        const inputs = Array.from(document.querySelectorAll('input'));
+        const targetInput = inputs.find(i => 
+          i.type === 'text' || 
+          i.type === 'url' || 
+          (i.placeholder && i.placeholder.toLowerCase().includes('raidbots')) ||
+          i.isVisible
+        ) || inputs[0];
+
+        if (targetInput) {
+          targetInput.value = url;
+          targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+          targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+        return false;
+      }, raidbotsUrl);
+
+      if (!inputFound) {
+        throw new Error("Modal input field for Raidbots URL was not found.");
+      }
+
+      await new Promise(r => setTimeout(r, 1000));
 
       console.log('👆 Clicking Fetch Report button...');
       await page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button'));
-        const fetchBtn = buttons.find(b => b.textContent.includes('Fetch Report') || b.textContent.includes('Import'));
+        const fetchBtn = buttons.find(b => 
+          b.textContent.includes('Fetch Report') || 
+          b.textContent.includes('Import') ||
+          b.textContent.includes('Submit')
+        );
         if (fetchBtn) fetchBtn.click();
       });
 
@@ -155,7 +184,7 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-process.on('unhandledRejection', (error) => {
+process.env.SESSION_COOKIE && process.on('unhandledRejection', (error) => {
   console.error('❌ Unhandled Error:', error);
 });
 
