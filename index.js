@@ -113,7 +113,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     console.log(`✅ Extracted Character Name: "${cleanCharName}"`);
     await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating to WoWUtils...`);
 
-    // --- STEP 2: Navigate directly to Droptimizers Page ---
+    // --- STEP 2: Navigate with Cookies ---
     if (!process.env.SESSION_COOKIE) {
       throw new Error("SESSION_COOKIE environment variable is missing on Render!");
     }
@@ -128,50 +128,86 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       sameSite: 'Lax'
     });
 
-    console.log('📍 Navigating directly to WoWUtils Droptimizers URL...');
-    const droptimizerDirectUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=team&subtab=droptimizers';
-    await page.goto(droptimizerDirectUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    console.log('📍 Navigating to WoWUtils Group Main Page...');
+    await page.goto('https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464', { waitUntil: 'domcontentloaded', timeout: 90000 });
 
-    await new Promise(r => setTimeout(r, 6000));
+    await new Promise(r => setTimeout(r, 4000));
     await dismissCookieBanner(page);
 
-    // --- STEP 3: Precise Search Member Row & Click Upload Icon Only ---
+    // --- STEP 2.5: Ensure Group Selection if No Group ---
+    console.log('👆 Checking active group...');
+    await page.evaluate(() => {
+      const groupDropdown = Array.from(document.querySelectorAll('*')).find(el => el.textContent && el.textContent.trim() === 'No Group');
+      if (groupDropdown) groupDropdown.click();
+    });
+
+    await new Promise(r => setTimeout(r, 1000));
+
+    await page.evaluate(() => {
+      const groupOption = Array.from(document.querySelectorAll('*')).find(el => el.textContent && el.textContent.includes('NENM'));
+      if (groupOption) groupOption.click();
+    });
+
+    await new Promise(r => setTimeout(r, 2000));
+    await dismissCookieBanner(page);
+
+    // --- STEP 2.6: Navigation Sequence: Loot -> Team -> Droptimizers ---
+    console.log('👆 Step A: Clicking "Loot" in Left Menu...');
+    await page.evaluate(() => {
+      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
+      const lootBtn = elements.find(el => el.textContent && el.textContent.trim() === 'Loot');
+      if (lootBtn) lootBtn.click();
+    });
+
+    await new Promise(r => setTimeout(r, 2000));
+    await dismissCookieBanner(page);
+
+    console.log('👆 Step B: Clicking "Team" tab...');
+    await page.evaluate(() => {
+      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
+      const teamBtn = elements.find(el => el.textContent && el.textContent.trim() === 'Team');
+      if (teamBtn) teamBtn.click();
+    });
+
+    await new Promise(r => setTimeout(r, 2000));
+
+    console.log('👆 Step C: Clicking "Droptimizer" / "Droptimizers" subtab...');
+    await page.evaluate(() => {
+      const elements = Array.from(document.querySelectorAll('a, button, div, span'));
+      const dropBtn = elements.find(el => el.textContent && el.textContent.trim().toLowerCase().includes('droptimizer'));
+      if (dropBtn) dropBtn.click();
+    });
+
+    console.log('⏳ Waiting 5 seconds for Droptimizer table to load...');
+    await new Promise(r => setTimeout(r, 5000));
+    await dismissCookieBanner(page);
+
+    // --- STEP 3: Search Member Row & Click Upload Icon ---
     console.log(`🔍 Locating character row for "${cleanCharName}" and finding Upload button...`);
 
     const clickResult = await page.evaluate((targetChar) => {
-      // Find table rows or list containers
-      const rows = Array.from(document.querySelectorAll('tr, div[class*="row"], div[class*="item"]'));
+      const allElements = Array.from(document.querySelectorAll('*'));
       
-      let targetRow = null;
-      for (const r of rows) {
-        const text = r.textContent ? r.textContent.toLowerCase() : '';
-        if (text.includes(targetChar)) {
-          targetRow = r;
-          break;
-        }
+      const nameEl = allElements.find(el => {
+        return el.children.length === 0 && el.textContent.toLowerCase().trim() === targetChar;
+      }) || allElements.find(el => el.textContent.toLowerCase().includes(targetChar));
+
+      if (!nameEl) {
+        return { success: false, reason: `Character "${targetChar}" not found on page.` };
       }
 
-      if (!targetRow) {
-        return { success: false, reason: `Character "${targetChar}" row not found on page.` };
+      const row = nameEl.closest('tr, div[class*="row"], div[class*="item"], li');
+      if (!row) {
+        return { success: false, reason: 'Parent row container not found.' };
       }
 
-      // Look specifically for action buttons/icons inside this row, avoid clicking the character name link directly
-      const actionBtn = targetRow.querySelector('button, svg[data-icon*="upload"], svg[class*="upload"], button[aria-label*="upload"]');
-      
-      if (actionBtn) {
-        if (actionBtn.tagName === 'SVG' && actionBtn.parentElement) {
-          actionBtn.parentElement.click();
+      const uploadBtn = row.querySelector('button, svg, a[aria-label*="upload"]');
+      if (uploadBtn) {
+        if (uploadBtn.tagName === 'SVG' && uploadBtn.parentElement) {
+          uploadBtn.parentElement.click();
         } else {
-          actionBtn.click();
+          uploadBtn.click();
         }
-        return { success: true };
-      }
-
-      // Fallback: Click the last clickable element in the row (usually actions/upload)
-      const allClickables = Array.from(targetRow.querySelectorAll('button, svg, a'));
-      if (allClickables.length > 1) {
-        const lastBtn = allClickables[allClickables.length - 1];
-        lastBtn.click();
         return { success: true };
       }
 
