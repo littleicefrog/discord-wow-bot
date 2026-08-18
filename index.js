@@ -25,11 +25,11 @@ const client = new Client({
 
 // Automation Process Function
 async function processRaidbotsTask(message, raidbotsUrl) {
-  const replyMsg = await message.reply('⏳ Processing...');
+  const replyMsg = await message.reply('⏳ Fetching Raidbots character name...');
 
   let browser;
   try {
-    console.log(`🚀 [Queue Size: ${queue.size}] Launching Chromium for ${message.author.tag}...`);
+    console.log(`🚀 Launching Chromium for ${message.author.tag}...`);
     browser = await puppeteer.launch({
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
       headless: "new",
@@ -50,7 +50,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
-    // Block heavy media
+    // Block heavy media (Images/Fonts)
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const resourceType = req.resourceType();
@@ -61,16 +61,52 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       }
     });
 
-    // Pre-set session cookie
+    // --- STEP 1: Fetch Character Name directly from Raidbots Link ---
+    console.log(`🔎 Reading character name from Raidbots Link: ${raidbotsUrl}`);
+    await page.goto(raidbotsUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+    // Wait for the main title/character name to render on Raidbots page
+    await page.waitForSelector('h1, header, .character-name', { timeout: 15000 }).catch(() => {});
+
+    const characterName = await page.evaluate(() => {
+      // Extract character name from title or page text
+      const pageText = document.body.innerText;
+      const titleText = document.title;
+      
+      // Raidbots page title format usually: "Droptimizer - CharacterName - Realm" or similar
+      const titleMatch = titleText.match(/-\s*([A-Za-z0-9]+)\s*-/);
+      if (titleMatch && titleMatch[1]) {
+        return titleMatch[1].trim();
+      }
+
+      // Fallback: Check h1 or heading tags
+      const headings = Array.from(document.querySelectorAll('h1, h2, header'));
+      for (const h of headings) {
+        if (h.textContent && h.textContent.trim().length > 0) {
+          const firstWord = h.textContent.trim().split(/[\s-]+/)[0];
+          if (firstWord && firstWord.length > 2) return firstWord;
+        }
+      }
+
+      return null;
+    });
+
+    if (!characterName) {
+      throw new Error("Could not extract WoW Character Name from the provided Raidbots link!");
+    }
+
+    const cleanCharName = characterName.toLowerCase().trim();
+    console.log(`✅ Extracted Character Name: "${cleanCharName}"`);
+    await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating to WoWUtils...`);
+
+    // --- STEP 2: Navigate to WoWUtils ---
     if (!process.env.SESSION_COOKIE) {
       throw new Error("SESSION_COOKIE environment variable is missing on Render!");
     }
 
-    const cleanCookie = process.env.SESSION_COOKIE.trim();
-
     await page.setCookie({
       name: '__Secure-next-auth.session-token',
-      value: cleanCookie,
+      value: process.env.SESSION_COOKIE.trim(),
       domain: '.wowutils.com',
       path: '/',
       secure: true,
@@ -82,32 +118,56 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
     await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
 
-    console.log('👆 Waiting for Import droptimizer button...');
-    
-    let buttonFound = false;
-    try {
-      await page.waitForFunction(() => {
-        const btns = Array.from(document.querySelectorAll('button'));
-        return btns.some(b => b.textContent.includes('Import droptimizer'));
-      }, { timeout: 30000 });
+    // --- STEP 3: Click "Team" Tab ---
+    console.log('👆 Clicking Team tab...');
+    await page.waitForFunction(() => {
+      const elements = Array.from(document.querySelectorAll('button, a, div, span'));
+      return elements.some(e => e.textContent.trim() === 'Team');
+    }, { timeout: 30000 });
 
-      const buttonElement = await page.evaluateHandle(() => {
-        const btns = Array.from(document.querySelectorAll('button'));
-        return btns.find(b => b.textContent.includes('Import droptimizer'));
+    const teamTabElement = await page.evaluateHandle(() => {
+      const elements = Array.from(document.querySelectorAll('button, a, div, span'));
+      return elements.find(e => e.textContent.trim() === 'Team');
+    });
+
+    if (teamTabElement) {
+      await teamTabElement.click();
+    } else {
+      throw new Error("Team tab not found!");
+    }
+
+    await new Promise(r => setTimeout(r, 1500));
+
+    // --- STEP 4: Find Member Row matching Character Name & Click Upload Icon ---
+    console.log(`🔍 Searching for Member row matching "${cleanCharName}"...`);
+    await page.waitForSelector('tr, div', { timeout: 15000 });
+
+    const uploadClicked = await page.evaluate((targetChar) => {
+      const allRows = Array.from(document.querySelectorAll('tr, div'));
+      
+      // Find row containing the character name
+      const matchedRow = allRows.find(row => {
+        const text = row.textContent.toLowerCase();
+        return text.includes(targetChar);
       });
 
-      if (buttonElement) {
-        await buttonElement.click();
-        buttonFound = true;
+      if (matchedRow) {
+        // Find upload icon/button inside this row
+        const parentRow = matchedRow.closest('tr') || matchedRow;
+        const uploadBtn = parentRow.querySelector('button, svg, a');
+        if (uploadBtn) {
+          uploadBtn.click();
+          return true;
+        }
       }
-    } catch (e) {
-      buttonFound = false;
+      return false;
+    }, cleanCharName);
+
+    if (!uploadClicked) {
+      throw new Error(`Could not find character "${characterName}" or upload icon in WoWUtils Team table!`);
     }
 
-    if (!buttonFound) {
-      throw new Error("Import droptimizer button not found. Please refresh your SESSION_COOKIE in Render.");
-    }
-
+    // --- STEP 5: Enter Raidbots Link into Modal ---
     console.log('⌛ Waiting for modal input field...');
     const inputElement = await page.waitForSelector('input', { timeout: 20000 });
 
@@ -121,13 +181,15 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     await new Promise(r => setTimeout(r, 1000));
 
-    console.log('👆 Clicking Fetch Report button...');
+    // --- STEP 6: Submit / Fetch Report ---
+    console.log('👆 Clicking Fetch Report / Import button...');
     const clickedFetch = await page.evaluate(() => {
       const buttons = Array.from(document.querySelectorAll('button'));
       const fetchBtn = buttons.find(b => 
         b.textContent.includes('Fetch Report') || 
         b.textContent.includes('Import') ||
-        b.textContent.includes('Submit')
+        b.textContent.includes('Submit') ||
+        b.textContent.includes('Upload')
       );
       if (fetchBtn) {
         fetchBtn.click();
@@ -142,7 +204,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     await new Promise(r => setTimeout(r, 5000));
 
-    await replyMsg.edit('✅ Completed!');
+    await replyMsg.edit(`✅ Completed droptimizer import for **${characterName}**!`);
     console.log('🎉 Task completed successfully!');
 
   } catch (error) {
