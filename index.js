@@ -123,7 +123,7 @@ async function processRaidbotsTask(message, raidbotsUrl) {
     console.log(`✅ Character Name: "${cleanCharName}"`);
     await replyMsg.edit(`⏳ Found Character: **${characterName}**. Navigating to WoWUtils...`);
 
-    // --- STEP 2: Inject Cookies & Navigate directly to Roster/Gear ---
+    // --- STEP 2: Inject Cookies & Direct Navigation ---
     if (!process.env.SESSION_COOKIE) {
       throw new Error("SESSION_COOKIE environment variable is missing on Render!");
     }
@@ -138,63 +138,62 @@ async function processRaidbotsTask(message, raidbotsUrl) {
       sameSite: 'Lax'
     });
 
-    const mainGroupUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464';
-    console.log(`📍 Navigating to Group Hub: ${mainGroupUrl}`);
+    // Direct path to Roster Report / Gear overview page
+    const rosterUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464/roster';
+    console.log(`📍 Navigating directly to: ${rosterUrl}`);
     
-    await page.goto(mainGroupUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+    await page.goto(rosterUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     await dismissCookieBanner(page);
 
-    // --- STEP 2.5: Click "Roster Report" or "Roster" in Navigation Sidebar ---
-    console.log('👇 Locating Roster Report / Gear table in navigation...');
-    
+    // Ensure we are not stuck on Boost page
     await page.evaluate(() => {
-      const sidebarLinks = Array.from(document.querySelectorAll('a, button'));
-      const rosterBtn = sidebarLinks.find(el => {
-        const txt = (el.textContent || '').trim().toLowerCase();
-        return txt === 'roster report' || txt === 'roster';
-      });
-
-      if (rosterBtn) {
-        rosterBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-        rosterBtn.click();
+      const links = Array.from(document.querySelectorAll('a'));
+      const rosterReportLink = links.find(a => (a.textContent || '').trim().toLowerCase() === 'roster report');
+      if (rosterReportLink) {
+        rosterReportLink.click();
       }
     });
 
     await new Promise(r => setTimeout(r, 3000));
     await dismissCookieBanner(page);
 
-    // --- STEP 3: Locate Exact Character Row & Trigger Import Modal ---
+    // --- STEP 3: Find Character Row & Click Upload Icon Only ---
     console.log(`🔍 Locating character row for "${cleanCharName}"...`);
 
     const clickResult = await page.evaluate((targetChar) => {
-      // Look for rows containing text
-      const allRows = Array.from(document.querySelectorAll('tr, div[class*="row"], div[class*="Row"], div[class*="character"]'));
+      const allRows = Array.from(document.querySelectorAll('tr, div[class*="row"], div[class*="Row"]'));
       
       const targetRow = allRows.find(r => {
         const text = r.textContent.toLowerCase();
-        return text.includes(targetChar) && !r.querySelector('input');
+        return text.includes(targetChar);
       });
 
       if (!targetRow) {
-        return { success: false, reason: `Character "${targetChar}" not found on page.` };
+        return { success: false, reason: `Character "${targetChar}" not found in roster table.` };
       }
 
-      // Find upload/import icon button specifically within that row
-      const clickableIcons = Array.from(targetRow.querySelectorAll('button, svg, a'));
-      const uploadBtn = clickableIcons.find(icon => {
+      // Explicitly pick the action icon button in the row
+      const actionIcons = Array.from(targetRow.querySelectorAll('button, svg'));
+      let uploadBtn = actionIcons.find(icon => {
         const aria = (icon.getAttribute('aria-label') || '').toLowerCase();
         const title = (icon.getAttribute('title') || '').toLowerCase();
         return aria.includes('upload') || aria.includes('import') || title.includes('upload') || title.includes('import');
-      }) || targetRow.querySelector('button');
+      });
+
+      if (!uploadBtn) {
+        // Fallback to second/last clickable element in row if not directly tagged
+        const buttons = Array.from(targetRow.querySelectorAll('button'));
+        uploadBtn = buttons[buttons.length - 1];
+      }
 
       if (uploadBtn) {
-        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-        uploadBtn.dispatchEvent(evt);
+        const clickEvt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        uploadBtn.dispatchEvent(clickEvt);
         if (typeof uploadBtn.click === 'function') uploadBtn.click();
         return { success: true };
       }
 
-      return { success: false, reason: 'Upload icon button missing inside character row.' };
+      return { success: false, reason: 'Upload button/icon missing inside character row.' };
     }, cleanCharName);
 
     if (!clickResult.success) {
