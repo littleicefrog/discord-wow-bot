@@ -113,10 +113,23 @@ async function processRaidbotsTask(message, raidbotsUrl) {
 
     console.log('📍 Navigating directly to WoWUtils Team Droptimizers Page...');
     const droptimizerDirectUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=team&subtab=droptimizers';
-    await page.goto(droptimizerDirectUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    
+    // Use networkidle2 so background API calls complete
+    await page.goto(droptimizerDirectUrl, { waitUntil: 'networkidle2', timeout: 90000 }).catch(async () => {
+      console.log('⚠️ Networkidle2 timed out, falling back to basic wait...');
+    });
 
-    console.log('⏳ Waiting 6 seconds for page JS to render...');
-    await new Promise(r => setTimeout(r, 6000));
+    console.log('⏳ Waiting for skeleton loaders to finish and actual content to appear...');
+    
+    // Explicitly wait until target character text or rows render
+    await page.waitForFunction((targetChar) => {
+      const textContent = document.body.innerText || '';
+      return textContent.toLowerCase().includes(targetChar.toLowerCase());
+    }, { timeout: 30000 }, cleanCharName).catch(() => {
+      console.log('⚠️ Target character name not detected in standard wait, proceeding to dynamic search...');
+    });
+
+    await new Promise(r => setTimeout(r, 3000));
 
     // --- STEP 3: Search Member Row & Click Upload Arrow ---
     console.log(`🔍 Searching for Upload Icon next to member "${cleanCharName}"...`);
@@ -211,7 +224,6 @@ async function processRaidbotsTask(message, raidbotsUrl) {
   } catch (error) {
     console.error('❌ Detailed Error Log:', error.message || error);
     
-    // Take screenshot on error and send to Discord in English
     if (page) {
       try {
         const screenshotPath = 'error.png';
