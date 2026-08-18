@@ -57,10 +57,10 @@ client.on('messageCreate', async (message) => {
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800 });
 
-      // Step A: Wishlist Page သို့ သွားခြင်း (Network ငြိမ်အောင် အချိန်အနည်းငယ်စောင့်မည်)
+      // Step A: Wishlist Page သို့ သွားခြင်း
       console.log('📍 Navigating to WoWUtils page...');
       const wishlistUrl = 'https://wowutils.com/viserio-cooldowns/groups/6a809e90d1367bdf94b86464?tab=loot';
-      await page.goto(wishlistUrl, { waitUntil: 'commit', timeout: 60000 });
+      await page.goto(wishlistUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
       // Step B: Session Cookie ထည့်သွင်းခြင်း
       console.log('🔑 Setting session cookie...');
@@ -74,7 +74,7 @@ client.on('messageCreate', async (message) => {
 
       // Cookie အကျိုးသက်ရောက်ရန် Reload ပြုလုပ်ခြင်း
       console.log('🔄 Reloading page to apply cookie...');
-      await page.reload({ waitUntil: 'commit', timeout: 60000 });
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
 
       // Step C: Cookie/Privacy Banner ပေါ်လာပါက "Accept All" ကို နှိပ်ပေးခြင်း
       try {
@@ -89,7 +89,7 @@ client.on('messageCreate', async (message) => {
 
       // Step D: "Import droptimizer" ခလုတ်ကို နှိပ်ခြင်း
       console.log('👆 Clicking Import droptimizer button...');
-      await new Promise(r => setTimeout(r, 3000)); // Page element တွေ အပြည့်အဝ တက်လာအောင် ခဏစောင့်မည်
+      await new Promise(r => setTimeout(r, 3000)); // Element များ တက်လာစေရန် ခဏစောင့်မည်
       
       const imported = await page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button'));
