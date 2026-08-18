@@ -1,10 +1,9 @@
 const { Client, GatewayIntentBits } = require('discord.js');
-const puppeteer = require('puppeteer');
 const http = require('http');
-const PQueue = require('p-queue').default;
 
-// Queue Control: Concurrency: 1 ဆိုသည်မှာ တစ်ကြိမ်လျှင် Task ၁ ခုသာ Run မည်ဟု ကန့်သတ်ခြင်းဖြစ်သည်
-const queue = new PQueue({ concurrency: 1 });
+// Global variables for dynamic modules
+let puppeteer;
+let queue;
 
 // 1. Dummy Web Server for Render Health Check
 const PORT = process.env.PORT || 10000;
@@ -22,13 +21,6 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
   ]
-});
-
-// 3. Bot Online Event
-client.once('clientReady', () => {
-  console.log('========================================');
-  console.log(`✅ Success! Bot is online as: ${client.user.tag}`);
-  console.log('========================================');
 });
 
 // Task ကို သီးသန့် မောင်းနှင်ပေးမည့် Automation Function
@@ -169,21 +161,36 @@ async function processRaidbotsTask(message, raidbotsUrl) {
   }
 }
 
-// 4. Message Listener
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
+// Dynamic Imports & Initialize Bot
+async function init() {
+  puppeteer = (await import('puppeteer')).default;
+  const PQueue = (await import('p-queue')).default;
+  queue = new PQueue({ concurrency: 1 });
 
-  if (message.content.includes('raidbots.com/simbot/report/')) {
-    console.log(`📩 New Raidbots link received from ${message.author.tag}`);
-    const raidbotsUrl = message.content.trim();
+  // 3. Bot Online Event
+  client.once('clientReady', () => {
+    console.log('========================================');
+    console.log(`✅ Success! Bot is online as: ${client.user.tag}`);
+    console.log('========================================');
+  });
 
-    // Queue ထဲသို့ Task ထည့်သွင်းခြင်း (တစ်ကြိမ်လျှင် ၁ ခုသာ Run မည်)
-    queue.add(() => processRaidbotsTask(message, raidbotsUrl));
-  }
-});
+  // 4. Message Listener
+  client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
 
-process.on('unhandledRejection', (error) => {
-  console.error('❌ Unhandled Error:', error);
-});
+    if (message.content.includes('raidbots.com/simbot/report/')) {
+      console.log(`📩 New Raidbots link received from ${message.author.tag}`);
+      const raidbotsUrl = message.content.trim();
 
-client.login(process.env.DISCORD_TOKEN);
+      queue.add(() => processRaidbotsTask(message, raidbotsUrl));
+    }
+  });
+
+  process.on('unhandledRejection', (error) => {
+    console.error('❌ Unhandled Error:', error);
+  });
+
+  client.login(process.env.DISCORD_TOKEN);
+}
+
+init();
